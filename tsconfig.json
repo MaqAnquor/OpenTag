@@ -17,5 +17,5 @@
     "jsxImportSource": "@copilotkit/channels-ui"
   },
   "include": ["app/**/*.ts", "app/**/*.tsx", "runtime.ts", "scripts/**/*.ts"],
-  "exclude": ["node_modules", "agent", "e2e"]
+  "exclude": ["node_modules", "e2e"]
 }

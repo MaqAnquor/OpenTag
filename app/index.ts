@@ -150,9 +150,9 @@ async function main() {
     // routes there); locally it defaults to 3000. Fail loud on a malformed
     // PORT rather than letting `Number("abc")` → NaN reach `server.listen()`.
     const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-    if (!Number.isInteger(port) || port < 0) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
       console.error(
-        `Invalid PORT: "${process.env.PORT}" is not a valid port number`,
+        `Invalid PORT: "${process.env.PORT}" is not a valid port number (must be an integer between 1 and 65535)`,
       );
       process.exit(1);
     }
@@ -246,16 +246,20 @@ async function main() {
   // platforms without suggested-prompt support no-op.
   bot.onThreadStarted(async ({ thread, user }) => {
     if (!user?.name) return;
-    await thread.setSuggestedPrompts([
-      {
-        title: `Triage ${user.name}'s issues`,
-        message: "Triage my open issues",
-      },
-      {
-        title: "What shipped this week?",
-        message: "Summarize what shipped this week",
-      },
-    ]);
+    try {
+      await thread.setSuggestedPrompts([
+        {
+          title: `Triage ${user.name}'s issues`,
+          message: "Triage my open issues",
+        },
+        {
+          title: "What shipped this week?",
+          message: "Summarize what shipped this week",
+        },
+      ]);
+    } catch (err) {
+      console.error("[bot] onThreadStarted failed", err);
+    }
   });
 
   await bot.start();

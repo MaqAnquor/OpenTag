@@ -340,6 +340,12 @@ const listener = createCopilotNodeListener({
 });
 
 const port = Number(process.env["PORT"] ?? 8200);
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  console.error(
+    `Invalid PORT: "${process.env["PORT"]}" is not a valid port number`,
+  );
+  process.exit(1);
+}
 createServer(listener).listen(port, () => {
   console.log(
     `[runtime] listening on http://localhost:${port}/api/copilotkit/agent/triage/run`,

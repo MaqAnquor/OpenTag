@@ -70,7 +70,7 @@ CopilotKit Intelligence project for Intelligence mode. Step-by-step in
 **2. Set your secrets** in `.env` (`cp .env.example .env`):
 
 ```bash
-OPENAI_API_KEY=sk-...      # or ANTHROPIC_API_KEY — bring your own model
+OPENAI_API_KEY=sk-...      # the agent runs on OpenAI's Responses API (required for web search)
 
 # Self-hosted mode:
 SLACK_BOT_TOKEN=xoxb-...

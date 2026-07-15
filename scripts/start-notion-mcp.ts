@@ -65,8 +65,6 @@ const child = spawn(
     "http",
     "--port",
     port,
-    "--auth-token",
-    authToken,
   ],
   {
     stdio: "inherit",

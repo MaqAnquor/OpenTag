@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderToIR, type BotNode } from "@copilotkit/channels-ui";
 import { renderSlackMessage } from "@copilotkit/channels-slack";
 import { confirmWriteTool } from "../confirm-write-tool.js";
@@ -52,5 +52,23 @@ describe("confirm_write tool", () => {
     expect(result).toBe(
       "The user DECLINED — do not write; acknowledge and stop.",
     );
+  });
+
+  it("returns a NO-RESPONSE message and logs when awaitChoice resolves null (timeout/dismissed)", async () => {
+    const { thread } = fakeThread(null);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const result = await confirmWriteTool.handler(
+      { action: "Create Linear issue" },
+      { thread, platform: "slack" } as never,
+    );
+
+    expect(result).toMatch(/no response/i);
+    expect(result).not.toMatch(/APPROVED/);
+    expect(consoleError).toHaveBeenCalled();
+
+    consoleError.mockRestore();
   });
 });

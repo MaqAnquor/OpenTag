@@ -117,7 +117,9 @@ Configure it with:
 | `INTELLIGENCE_CHANNEL_NAME` | The registered channel name (lowercase kebab). Defaults to `kitebot`. |
 
 The agent backend is still required in this mode — `pnpm runtime` (`runtime.ts`) — the Intelligence
-channel host points its `AGENT_URL` at it exactly like the self-hosted KiteBot does. See
+channel host points its `AGENT_URL` at it exactly like the self-hosted KiteBot does. `AGENT_URL`
+itself is required in every mode (the process exits at startup if it's unset); `.env.example` ships
+it pre-filled with the local runtime URL as a template, not as a code-level default. See
 [`.env.example`](./.env.example) for the full annotated list.
 
 ## 1. Create a Slack app
@@ -148,15 +150,15 @@ cp .env.example .env
 | Variable | What it's for |
 | --- | --- |
 | `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | Run on Slack (see [step 1](#1-create-a-slack-app)). |
-| `OPENAI_API_KEY` | The model. Or set `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` and `AGENT_MODEL`. |
-| `AGENT_MODEL` | `provider/model` override. Defaults to `openai/gpt-5.5`. |
+| `OPENAI_API_KEY` | The model. Required — the runtime is OpenAI-only (it runs on the OpenAI Responses API, needed for `web_search`); `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` are not read by this runtime. |
+| `AGENT_MODEL` | OpenAI model id override, optionally prefixed `openai/` (stripped). Defaults to `openai/gpt-5.5`. |
 | `LINEAR_API_KEY` / `LINEAR_TEAM_KEY` | Wire up Linear (linear.app → Settings → API → Personal API keys). |
 | `NOTION_TOKEN` / `NOTION_MCP_AUTH_TOKEN` | Wire up Notion (see [Notion](#notion)). |
 | `DISCORD_BOT_TOKEN` / `DISCORD_APP_ID` | Run on Discord. |
 | `TELEGRAM_BOT_TOKEN` | Run on Telegram. |
 | `WHATSAPP_ACCESS_TOKEN` (+ siblings) | Run on WhatsApp Cloud API. |
 | `INTELLIGENCE_GATEWAY_WS_URL` / `INTELLIGENCE_API_KEY` / `INTELLIGENCE_ORG_ID` / `INTELLIGENCE_PROJECT_ID` / `INTELLIGENCE_CHANNEL_ID` / `INTELLIGENCE_CHANNEL_NAME` | Run in [Intelligence channel mode](#intelligence-channel-mode) instead of holding platform tokens directly. |
-| `AGENT_URL` | Where KiteBot POSTs (defaults to the local runtime: `…/agent/triage/run`). |
+| `AGENT_URL` | Where KiteBot POSTs. **Required** — the process exits at startup if unset; the template value points at the local runtime (`…/agent/triage/run`). |
 
 Every integration is independent — set only what you need. The full annotated list, including the
 WhatsApp webhook details, is in [`.env.example`](./.env.example).
@@ -238,8 +240,10 @@ are decoded and handed over as text. Then ask it to visualize:
 
 > chart revenue by month · diagram this incident flow · show it as a table
 
-> **PDFs and images need a vision/document-capable model.** The default `openai/gpt-5.5` reads
-> both natively, as do recent Claude and Gemini models.
+> **PDFs and images need a vision/document-capable model.** The runtime is OpenAI-only, and the
+> default `openai/gpt-5.5` reads both natively. If you override `AGENT_MODEL`, pick another
+> vision/document-capable OpenAI model — non-OpenAI model ids (Claude, Gemini, etc.) are not
+> supported by this runtime.
 
 ## Tests
 

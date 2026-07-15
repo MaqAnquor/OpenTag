@@ -56,9 +56,9 @@ export interface CreateKiteBotOptions {
  * passed explicitly — preferring multimodal parts when present.
  */
 export function promptFromMessage(message: {
-  contentParts?: unknown[];
+  contentParts?: AgentContentPart[];
   text: string;
-}): unknown {
+}): string | AgentContentPart[] {
   return message.contentParts?.length ? message.contentParts : message.text;
 }
 
@@ -109,7 +109,7 @@ export function createKiteBot(opts: CreateKiteBotOptions): Bot {
   bot.onMention(async ({ thread, message }) => {
     try {
       await thread.runAgent({
-        prompt: promptFromMessage(message) as string | AgentContentPart[],
+        prompt: promptFromMessage(message),
         context: senderContext(message.user, thread.platform),
       });
     } catch (err) {
@@ -158,7 +158,8 @@ async function main() {
   try {
     projectId = parseProjectId(process.env.INTELLIGENCE_PROJECT_ID);
   } catch (e) {
-    console.error((e as Error).message);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(msg);
     process.exit(1);
   }
 

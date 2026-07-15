@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { AgentContentPart } from "@copilotkit/channels-ui";
 import {
   createKiteBot,
   promptFromMessage,
@@ -30,7 +31,7 @@ describe("createKiteBot", () => {
 
 describe("promptFromMessage", () => {
   it("returns contentParts when present", () => {
-    const parts = [{ type: "text", text: "hi" }];
+    const parts: AgentContentPart[] = [{ type: "text", text: "hi" }];
     expect(
       promptFromMessage({ contentParts: parts, text: "hi" }),
     ).toBe(parts);
@@ -78,6 +79,24 @@ describe("parseProjectId", () => {
 
   it("throws when undefined", () => {
     expect(() => parseProjectId(undefined)).toThrow(
+      /Invalid INTELLIGENCE_PROJECT_ID/,
+    );
+  });
+
+  it("throws on a negative integer string", () => {
+    expect(() => parseProjectId("-5")).toThrow(
+      /Invalid INTELLIGENCE_PROJECT_ID/,
+    );
+  });
+
+  it("throws on a non-integer float string", () => {
+    expect(() => parseProjectId("1.5")).toThrow(
+      /Invalid INTELLIGENCE_PROJECT_ID/,
+    );
+  });
+
+  it("throws on an empty string", () => {
+    expect(() => parseProjectId("")).toThrow(
       /Invalid INTELLIGENCE_PROJECT_ID/,
     );
   });

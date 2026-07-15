@@ -1,3 +1,11 @@
+/**
+ * Covers the `render_chart` and `render_diagram` tools (render-chart.tsx /
+ * render-diagram.tsx) — the agent-facing tools that render a Chart.js config
+ * or Mermaid source to a PNG and post it via `thread.postFile`, plus a small
+ * JSX caption card posted first via `thread.post`. The `issue_card` /
+ * `issue_list` / `page_list` render-tool wrappers are covered separately in
+ * render-tools.test.tsx.
+ */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderToIR } from "@copilotkit/channels-ui";
 import { renderSlackMessage } from "@copilotkit/channels-slack";
@@ -65,7 +73,7 @@ describe("render_chart tool", () => {
       }),
     );
     expect(out).toBe("Rendered and posted the chart image to the thread.");
-    // The caption card was posted after the upload.
+    // The caption card was posted before the upload.
     expect(posts).toHaveLength(1);
     const { blocks } = renderSlackMessage(renderToIR(posts[0] as never));
     expect(JSON.stringify(blocks)).toContain("📊");
@@ -152,7 +160,7 @@ describe("render_diagram tool", () => {
     )) as string;
     expect(renderDiagram).toHaveBeenCalledWith("flowchart TD\n A-->B");
     expect(postFile).toHaveBeenCalledWith(
-      expect.objectContaining({ filename: "flow.png" }),
+      expect.objectContaining({ bytes: DIAGRAM_PNG, filename: "flow.png" }),
     );
     expect(out).toBe("Rendered and posted the diagram image to the thread.");
     expect(posts).toHaveLength(1);

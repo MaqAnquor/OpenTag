@@ -74,6 +74,27 @@ describe("example slash commands", () => {
     expect(thread.post).toHaveBeenCalledTimes(1);
   });
 
+  it("/agent logs and posts an apology when runAgent rejects", async () => {
+    const thread = fakeThread();
+    thread.runAgent.mockRejectedValueOnce(new Error("backend unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await byName("agent").handler(
+      ctx({
+        command: "agent",
+        text: "why is prod down",
+        thread: thread as never,
+      }),
+    );
+
+    expect(consoleError).toHaveBeenCalled();
+    expect(thread.post).toHaveBeenCalledWith(
+      expect.stringMatching(/sorry.*error/i),
+    );
+
+    consoleError.mockRestore();
+  });
+
   it("/triage runs the agent with a triage prompt", async () => {
     const thread = fakeThread();
     await byName("triage").handler(
