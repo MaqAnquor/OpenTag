@@ -2,7 +2,7 @@
 Deep Research Assistant - FastAPI Server
 
 Serves the Deep Research Agent via AG-UI protocol for CopilotKit integration.
-The agent uses Tavily for web research and Deep Agents for planning and filesystem operations.
+The agent uses Deep Agents for planning and filesystem operations, with optional Tavily web research.
 """
 
 import os
