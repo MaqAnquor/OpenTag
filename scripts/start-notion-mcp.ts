@@ -96,5 +96,13 @@ const child = spawn(
 // rather than a normal exit; map that to a non-zero status so a supervisor
 // or healthcheck can detect the crash instead of seeing a false "success".
 child.on("exit", (code) => process.exit(code ?? 1));
+// Without this, a failed spawn (e.g. `npx` not on PATH -> ENOENT, or EACCES)
+// surfaces as an uncaught 'error' event with a raw Node stack trace instead
+// of the clean, actionable messages this script prints for every other
+// misconfiguration.
+child.on("error", (err) => {
+  console.error("[notion-mcp] failed to start the sidecar:", err.message);
+  process.exit(1);
+});
 process.on("SIGINT", () => child.kill("SIGINT"));
 process.on("SIGTERM", () => child.kill("SIGTERM"));

@@ -138,6 +138,25 @@ describe("render_chart tool", () => {
     // No orphaned caption promising an image that never landed.
     expect(thread.post).not.toHaveBeenCalled();
   });
+
+  it("still resolves with the success string when the image posted but the caption post rejects", async () => {
+    const { ctx, thread } = makeCtx();
+    thread.post.mockRejectedValueOnce(new Error("caption post exploded"));
+    const out = (await renderChartTool.handler(
+      {
+        title: "Revenue Q2",
+        chartSpec: {
+          type: "bar",
+          data: { labels: ["a"], datasets: [{ data: [1] }] },
+        },
+      },
+      ctx,
+    )) as string;
+    // The image already landed — a caption-only failure must not make the
+    // tool report failure and cause the agent to apologize / re-render.
+    expect(out).toBe("Rendered and posted the chart image to the thread.");
+    expect(out).not.toContain("failed");
+  });
 });
 
 describe("render_diagram tool", () => {
@@ -196,5 +215,18 @@ describe("render_diagram tool", () => {
     );
     // No orphaned caption promising an image that never landed.
     expect(thread.post).not.toHaveBeenCalled();
+  });
+
+  it("still resolves with the success string when the image posted but the caption post rejects", async () => {
+    const { ctx, thread } = makeCtx();
+    thread.post.mockRejectedValueOnce(new Error("caption post exploded"));
+    const out = (await renderDiagramTool.handler(
+      { title: "Flow", mermaid: "flowchart TD\n A-->B" },
+      ctx,
+    )) as string;
+    // The image already landed — a caption-only failure must not make the
+    // tool report failure and cause the agent to apologize / re-render.
+    expect(out).toBe("Rendered and posted the diagram image to the thread.");
+    expect(out).not.toContain("failed");
   });
 });

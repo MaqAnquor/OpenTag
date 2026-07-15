@@ -100,4 +100,38 @@ describe("parseProjectId", () => {
       /Invalid INTELLIGENCE_PROJECT_ID/,
     );
   });
+
+  it("throws on a whitespace-only string", () => {
+    expect(() => parseProjectId(" ")).toThrow(
+      /Invalid INTELLIGENCE_PROJECT_ID/,
+    );
+  });
+
+  // Number("1e3") === 1000, Number("0x10") === 16, and Number("0b11") === 3
+  // all pass Number.isInteger(n) && n > 0 — so a naive Number(raw) parse
+  // would silently accept a typo'd env var as the wrong project id instead
+  // of throwing. Only plain decimal-digit strings are valid.
+  it("throws on exponential notation", () => {
+    expect(() => parseProjectId("1e3")).toThrow(
+      /Invalid INTELLIGENCE_PROJECT_ID/,
+    );
+  });
+
+  it("throws on hexadecimal notation", () => {
+    expect(() => parseProjectId("0x10")).toThrow(
+      /Invalid INTELLIGENCE_PROJECT_ID/,
+    );
+  });
+
+  it("throws on binary notation", () => {
+    expect(() => parseProjectId("0b11")).toThrow(
+      /Invalid INTELLIGENCE_PROJECT_ID/,
+    );
+  });
+
+  it("throws on a decimal float string", () => {
+    expect(() => parseProjectId("12.5")).toThrow(
+      /Invalid INTELLIGENCE_PROJECT_ID/,
+    );
+  });
 });

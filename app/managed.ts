@@ -69,9 +69,21 @@ export function buildAgentHeaders(
   return authHeader ? { Authorization: authHeader } : undefined;
 }
 
-/** Parse and validate INTELLIGENCE_PROJECT_ID, throwing on any invalid value. */
+/**
+ * Parse and validate INTELLIGENCE_PROJECT_ID, throwing on any invalid value.
+ *
+ * Only plain decimal-digit strings (e.g. "42") are accepted. `Number(raw)`
+ * alone would also accept hex ("0x10"), exponential ("1e3"), and binary
+ * ("0b11") notation — all of which pass `Number.isInteger(n) && n > 0` —
+ * so a typo'd env var could silently resolve to the wrong project. The
+ * `/^\d+$/` guard rejects anything that isn't a bare non-negative integer
+ * before handing it to `Number(...)`.
+ */
 export function parseProjectId(raw: string | undefined): number {
-  const n = Number(raw);
+  if (raw === undefined || !/^\d+$/.test(raw.trim())) {
+    throw new Error(`Invalid INTELLIGENCE_PROJECT_ID: "${raw}"`);
+  }
+  const n = Number(raw.trim());
   if (!Number.isInteger(n) || n <= 0) {
     throw new Error(`Invalid INTELLIGENCE_PROJECT_ID: "${raw}"`);
   }

@@ -26,14 +26,18 @@ interface TableBlock {
   column_settings?: Array<{ align?: string }>;
 }
 
-/** A fake `thread` recording each posted Renderable; optionally throws on post N. */
-function fakeThread(throwOnPost?: number) {
+/**
+ * A fake `thread` recording each posted Renderable. `throwOnPosts` names which
+ * 1-indexed post numbers should reject (e.g. `[1]` fails just the native post,
+ * `[1, 2]` fails both the native post and the monospace fallback).
+ */
+function fakeThread(throwOnPosts?: number[]) {
   const posts: unknown[] = [];
   let n = 0;
   const thread = {
     post: async (ui: unknown) => {
       n += 1;
-      if (throwOnPost === n) throw new Error("invalid_blocks");
+      if (throwOnPosts?.includes(n)) throw new Error("invalid_blocks");
       posts.push(ui);
       return { id: `m${n}` };
     },
@@ -116,7 +120,7 @@ describe("render_table tool", () => {
   });
 
   it("falls back to a monospace table when the native post is rejected", async () => {
-    const { posts, ctx } = fakeThread(1);
+    const { posts, ctx } = fakeThread([1]);
     const out = (await renderTableTool.handler(
       { title: "Open issues", columns: COLS, rows: ROWS },
       ctx,
@@ -136,6 +140,20 @@ describe("render_table tool", () => {
     const text = JSON.stringify(blocks);
     expect(text).toContain("```");
     expect(text).toContain("CPK-1");
+  });
+
+  it("resolves with an error status string (does not throw) when both the native post and the monospace fallback are rejected", async () => {
+    const { posts, ctx } = fakeThread([1, 2]);
+    await expect(
+      renderTableTool.handler(
+        { title: "Open issues", columns: COLS, rows: ROWS },
+        ctx,
+      ),
+    ).resolves.toBe(
+      "The table couldn't be posted (both native and monospace rendering failed).",
+    );
+    // Neither post was recorded — both rejected.
+    expect(posts).toHaveLength(0);
   });
 
   it("clamps to 99 data rows and reports the drop", async () => {

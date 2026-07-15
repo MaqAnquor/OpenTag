@@ -95,8 +95,11 @@ def research(query: str) -> dict:
         # Capture internet_search results
         search_results = []
 
-        # Wrapper to capture results while passing through to agent
-        def internet_search_tracked(query: str, max_results: int = 5):
+        # Wrapper to capture results while passing through to agent.
+        # Named `internet_search` (not `internet_search_tracked`) because
+        # LangChain derives the tool name the model sees from `__name__`,
+        # and `researcher_prompt` below refers to the tool as `internet_search`.
+        def internet_search(query: str, max_results: int = 5):
             """Search the web and return results with content.
 
             Args:
@@ -130,7 +133,7 @@ Rules:
         research_agent = create_deep_agent(
             model=llm,
             system_prompt=researcher_prompt,
-            tools=[internet_search_tracked],  # Use tracked version
+            tools=[internet_search],  # Use tracked version
             # No middleware - this runs in isolated thread
         )
 
@@ -213,11 +216,22 @@ def internal_source_tools() -> list:
         for name, connection in connections.items():
             try:
                 server_client = MultiServerMCPClient({name: connection})
-                server_tools = await server_client.get_tools()
+                # Bound connect time so a hung MCP server (accepts the
+                # socket but never responds) can't stall build_agent() -
+                # and thus the whole app, including /health - at import
+                # time. Mirrors runtime.ts's MCP_CONNECT_TIMEOUT_MS=8000.
+                server_tools = await asyncio.wait_for(
+                    server_client.get_tools(), timeout=8.0
+                )
                 loaded.extend(server_tools)
                 print(
                     f"[TOOLS] internal_source_tools: loaded {len(server_tools)} "
                     f"tool(s) from {name}"
+                )
+            except asyncio.TimeoutError:
+                print(
+                    f"[TOOLS] internal_source_tools: {name} MCP timed out "
+                    f"after 8s, skipping"
                 )
             except Exception as e:
                 print(

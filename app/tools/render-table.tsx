@@ -172,8 +172,20 @@ export const renderTableTool = defineBotTool({
           {noteBlock}
         </Message>
       );
-      await thread.post(fallback);
-      return `Rendered the table (monospace fallback) for the user.${noteSuffix}`;
+      try {
+        await thread.post(fallback);
+        return `Rendered the table (monospace fallback) for the user.${noteSuffix}`;
+      } catch (fallbackErr) {
+        // Both the native table and the monospace fallback were rejected —
+        // likely the same transient/platform failure hit both posts. Return a
+        // clear status string instead of letting the handler throw, so the
+        // agent gets an actionable message rather than an opaque tool error.
+        console.error(
+          "[render-table] monospace fallback post also failed",
+          fallbackErr,
+        );
+        return `The table couldn't be posted (both native and monospace rendering failed).${noteSuffix}`;
+      }
     }
   },
 });

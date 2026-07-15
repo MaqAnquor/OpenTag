@@ -80,7 +80,10 @@ def build_agent():
     generates UI components from its own knowledge.
 
     Returns:
-        Compiled LangGraph StateGraph configured for research tasks
+        The compiled research graph (from `create_deep_agent`), bound with
+        a `recursion_limit=100` run config via `.with_config(...)` - a
+        RunnableBinding wrapping the compiled StateGraph, not the bare
+        graph itself.
     """
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:

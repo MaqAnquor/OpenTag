@@ -7,7 +7,7 @@
  * render-tool demo.
  */
 import { z } from "zod";
-import { Context } from "@copilotkit/channels-ui";
+import { Context, Message } from "@copilotkit/channels-ui";
 import { defineBotTool } from "@copilotkit/channels";
 import { renderDiagram } from "../render/diagram.js";
 
@@ -53,12 +53,24 @@ export const renderDiagramTool = defineBotTool({
       if (!res.ok) {
         return `Diagram render failed: ${res.error ?? "upload was rejected"}. Fix the Mermaid syntax and retry.`;
       }
-      // Post the Context caption only after the upload succeeds, so a failed
-      // upload never leaves a caption in the thread (see render-chart.tsx).
-      await ctx.thread.post(<Context>{`📐  *${title ?? "Diagram"}*`}</Context>);
+      // The image has landed — the tool has already succeeded from the
+      // agent's/user's point of view. Post the caption in its own guarded
+      // block so a caption-only failure (e.g. a flaky `thread.post`) never
+      // overrides the successful-upload result and triggers a duplicate
+      // re-render (see render-chart.tsx).
+      try {
+        await ctx.thread.post(
+          <Message>
+            <Context>{`📐  *${title ?? "Diagram"}*`}</Context>
+          </Message>,
+        );
+      } catch (captionError) {
+        console.error("[render-diagram] caption post failed", captionError);
+      }
       return "Rendered and posted the diagram image to the thread.";
     } catch (e) {
       // Surface the Mermaid parse error so the agent can repair the source.
+      console.error("[render-diagram] render/upload failed", e);
       return `Diagram render failed: ${(e as Error).message}. Fix the Mermaid syntax and retry.`;
     }
   },

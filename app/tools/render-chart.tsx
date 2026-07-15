@@ -7,7 +7,7 @@
  * (`<Context>`) so the tool doubles as a render-tool demo.
  */
 import { z } from "zod";
-import { Context } from "@copilotkit/channels-ui";
+import { Context, Message } from "@copilotkit/channels-ui";
 import { defineBotTool } from "@copilotkit/channels";
 import { renderChart } from "../render/chart.js";
 
@@ -83,12 +83,24 @@ export const renderChartTool = defineBotTool({
       if (!res.ok) {
         return `Chart render failed: ${res.error ?? "upload was rejected"}`;
       }
-      // Post the Context caption only after the upload succeeds, so a failed
-      // upload never leaves a caption in the thread. Also doubles as a
-      // render-tool demo of a JSX <Context> card.
-      await ctx.thread.post(<Context>{`📊  *${title ?? "Chart"}*`}</Context>);
+      // The image has landed — the tool has already succeeded from the
+      // agent's/user's point of view. Post the caption in its own guarded
+      // block so a caption-only failure (e.g. a flaky `thread.post`) never
+      // overrides the successful-upload result and triggers a duplicate
+      // re-render. Also doubles as a render-tool demo of a JSX <Message>/
+      // <Context> card.
+      try {
+        await ctx.thread.post(
+          <Message>
+            <Context>{`📊  *${title ?? "Chart"}*`}</Context>
+          </Message>,
+        );
+      } catch (captionError) {
+        console.error("[render-chart] caption post failed", captionError);
+      }
       return "Rendered and posted the chart image to the thread.";
     } catch (e) {
+      console.error("[render-chart] render/upload failed", e);
       return `Chart render failed: ${(e as Error).message}`;
     }
   },
