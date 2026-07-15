@@ -29,3 +29,29 @@ def test_do_internet_search_swallows_errors(monkeypatch):
     monkeypatch.setattr(tools, "TavilyClient", BoomClient)
     out = tools._do_internet_search("q")
     assert out == [{"error": "boom"}]
+
+
+def test_internal_source_tools_empty_without_env(monkeypatch):
+    monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+    monkeypatch.delenv("NOTION_MCP_AUTH_TOKEN", raising=False)
+    assert tools.internal_source_tools() == []
+
+
+def test_internal_source_tools_loads_when_env_set(monkeypatch):
+    class FakeMCPClient:
+        """Stub replacing MultiServerMCPClient - no real network calls."""
+
+        def __init__(self, connections):
+            self.connections = connections
+
+        async def get_tools(self):
+            return [f"tool-for-{name}" for name in self.connections]
+
+    monkeypatch.setenv("LINEAR_API_KEY", "lin_api_test")
+    monkeypatch.setenv("NOTION_MCP_AUTH_TOKEN", "notion-test-token")
+    monkeypatch.setattr(tools, "MultiServerMCPClient", FakeMCPClient)
+
+    result = tools.internal_source_tools()
+
+    assert len(result) > 0
+    assert set(result) == {"tool-for-linear", "tool-for-notion"}

@@ -9,11 +9,13 @@ to prevent subagent text from leaking to the frontend via LangChain callback pro
 """
 
 import os
+import asyncio
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage
 from tavily import TavilyClient
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
 def _do_internet_search(query: str, max_results: int = 5) -> list[dict[str, Any]]:
@@ -177,3 +179,75 @@ Rules:
 
     print(f"[TOOL] research: completed with {len(result['sources'])} sources")
     return result
+
+
+def internal_source_tools() -> list:
+    """Notion + Linear MCP tools, included only when their env is present.
+
+    Reuses OpenTag's Phase-1 MCP servers so the agent can research the team's
+    own docs/issues alongside the web. Mirrors the transports `runtime.ts`'s
+    `mcpTransports()` describes: Linear's hosted MCP server (bearer
+    `LINEAR_API_KEY`, URL from `LINEAR_MCP_URL` or the `mcp.linear.app`
+    default) and the Notion MCP sidecar (bearer `NOTION_MCP_AUTH_TOKEN`, URL
+    from `NOTION_MCP_URL` or the localhost default). Each server is entirely
+    optional and gated independently - set neither, one, or both.
+
+    `langchain_mcp_adapters`'s `MultiServerMCPClient.get_tools()` is
+    async-only; this function runs it to completion on a short-lived event
+    loop (`asyncio.run`) so it can be called synchronously from
+    `build_agent()`. Each server is connected individually so one server
+    failing to load never drops the other's tools, and a down or
+    misconfigured MCP server is logged and skipped rather than raised -
+    this must never break agent startup.
+
+    Returns:
+        list: LangChain tools from the configured MCP server(s), or an
+            empty list when neither `LINEAR_API_KEY` nor
+            `NOTION_MCP_AUTH_TOKEN` is set (or all configured servers fail).
+    """
+    connections: dict[str, dict[str, Any]] = {}
+
+    linear_api_key = os.environ.get("LINEAR_API_KEY")
+    if linear_api_key:
+        connections["linear"] = {
+            "transport": "streamable_http",
+            "url": os.environ.get("LINEAR_MCP_URL", "https://mcp.linear.app/mcp"),
+            "headers": {"Authorization": f"Bearer {linear_api_key}"},
+        }
+
+    notion_auth_token = os.environ.get("NOTION_MCP_AUTH_TOKEN")
+    if notion_auth_token:
+        connections["notion"] = {
+            "transport": "streamable_http",
+            "url": os.environ.get("NOTION_MCP_URL", "http://127.0.0.1:3001/mcp"),
+            "headers": {"Authorization": f"Bearer {notion_auth_token}"},
+        }
+
+    if not connections:
+        return []
+
+    async def _load_all() -> list:
+        loaded: list = []
+        for name, connection in connections.items():
+            try:
+                server_client = MultiServerMCPClient({name: connection})
+                server_tools = await server_client.get_tools()
+                loaded.extend(server_tools)
+                print(
+                    f"[TOOLS] internal_source_tools: loaded {len(server_tools)} "
+                    f"tool(s) from {name}"
+                )
+            except Exception as e:
+                print(
+                    f"[TOOLS] internal_source_tools: {name} MCP unavailable, "
+                    f"skipping ({e})"
+                )
+        return loaded
+
+    try:
+        return asyncio.run(_load_all())
+    except Exception as e:
+        # Belt-and-suspenders: even a failure in the event-loop plumbing
+        # itself (not just an individual server) must not break startup.
+        print(f"[TOOLS] internal_source_tools: failed to load MCP tools ({e})")
+        return []

@@ -13,7 +13,7 @@ from deepagents import create_deep_agent
 from langgraph.checkpoint.memory import MemorySaver
 from copilotkit import CopilotKitMiddleware
 
-from tools import research
+from tools import research, internal_source_tools
 
 load_dotenv()
 
@@ -31,6 +31,8 @@ Hard rules (ALWAYS follow):
 - When you receive data from research or from your own knowledge, synthesize it into insights
 - Prefer rendering results as UI components (tables, cards, links, etc.) when the
   frontend offers them, rather than large blocks of raw markdown
+- For internal or company-specific questions, prefer the team's Notion/Linear
+  (internal sources) first; use the web for external questions
 
 Your workflow:
 1. PLAN: Create a research plan using write_todos with clear, actionable steps
@@ -101,7 +103,8 @@ def build_agent():
     # (write_todos, read_file, write_file) when Tavily is configured; the
     # research tool wraps an internal Deep Agent that runs via .invoke() so
     # its text doesn't stream to the frontend.
-    main_tools = [research] if has_research else []
+    internal_tools = internal_source_tools()
+    main_tools = [research, *internal_tools] if has_research else [*internal_tools]
 
     system_prompt = BASE_SYSTEM_PROMPT + (
         RESEARCH_TOOL_ADDENDUM if has_research else NO_RESEARCH_TOOL_ADDENDUM
@@ -119,6 +122,7 @@ def build_agent():
 
     print(f"[AGENT] KiteBot Deep Research Agent created with model={model_name}")
     print(f"[AGENT] research: {'enabled' if has_research else 'disabled'}")
+    print(f"[AGENT] internal-source tools: {len(internal_tools)}")
     print(f"[AGENT] Main tools: {[t.name for t in main_tools]}")
 
     # Configure recursion limit for complex research tasks
