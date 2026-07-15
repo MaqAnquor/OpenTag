@@ -1,15 +1,16 @@
 # OpenTag — setup & configuration
 
 Everything beyond the [quick start](./README.md#quick-start): the full Slack app walkthrough,
-the complete environment reference, running standalone vs. from the monorepo, wiring up Linear /
-Notion / inline charts / Redis, the other chat platforms, slash commands, tests, and how the
-pieces fit together.
+the complete environment reference, running standalone vs. from the monorepo, the Intelligence
+(managed) channel mode, wiring up Linear / Notion / inline charts, the other chat platforms,
+slash commands, tests, and how the pieces fit together.
 
 - [How it fits together](#how-it-fits-together)
-- [Running it](#running-it) — monorepo today, standalone soon
+- [Running it](#running-it) — monorepo or standalone, self-hosted or Intelligence-managed
+- [Intelligence channel mode](#intelligence-channel-mode)
 - [1. Create a Slack app](#1-create-a-slack-app)
 - [2. Environment variables](#2-environment-variables)
-- [3. Integrations](#3-integrations) — Linear, Notion, charts, Redis
+- [3. Integrations](#3-integrations) — Linear, Notion, charts
 - [Other platforms](#other-platforms) — Discord, Telegram, WhatsApp
 - [Slash commands](#slash-commands)
 - [Files → charts, diagrams & tables](#files--charts-diagrams--tables)
@@ -18,16 +19,22 @@ pieces fit together.
 ## How it fits together
 
 ```
-Slack / Discord / Telegram / WhatsApp ──@mention──▶  bot (app/)  ──AG-UI──▶  runtime (runtime.ts)
+Slack / Discord / Telegram / WhatsApp ──@mention──▶  KiteBot (app/)  ──AG-UI──▶  runtime (runtime.ts)
                                                           │  BuiltInAgent (LLM)
                                                           ├── Linear  MCP  (hosted)
                                                           └── Notion  MCP  (sidecar)
 ```
 
 Three moving parts: the **chat-platform app(s)** in `app/`, the **agent** (`runtime.ts`), and —
-if you use Notion — a small **Notion MCP sidecar**. The bot speaks to the agent over
+if you use Notion — a small **Notion MCP sidecar**. KiteBot speaks to the agent over
 [AG-UI](https://docs.ag-ui.com); the agent is one CopilotKit `BuiltInAgent` (an LLM plus
 optional MCP tools — no Python, no LangGraph).
+
+KiteBot runs in one of two modes: **self-hosted** (`pnpm dev` → `app/index.ts`, holds the Slack
+tokens directly) or **Intelligence-managed** (`pnpm channel` → `app/managed.ts`, over the
+CopilotKit Intelligence Realtime Gateway — see [Intelligence channel
+mode](#intelligence-channel-mode)). Both modes talk to the same agent backend
+(`pnpm runtime` → `runtime.ts`) via `AGENT_URL`.
 
 | Concept                                                              | Where                                                              |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------ |
@@ -42,7 +49,7 @@ optional MCP tools — no Python, no LangGraph).
 | A Block Kit **modal** (`/file-issue`)                                | [`app/modals/file-issue.tsx`](./app/modals/file-issue.tsx)         |
 | The agent backend — one `BuiltInAgent` (LLM + Linear/Notion MCP)     | [`runtime.ts`](./runtime.ts)                                       |
 
-- **`app/`** is the platform-agnostic bot. **This is the directory you copy to start your own bot.**
+- **`app/`** is the platform-agnostic KiteBot code. **This is the directory you copy to start your own bot.**
 - **`runtime.ts`** is the agent backend, served over AG-UI.
 - **`e2e/`** holds live test harnesses (the Slack harness is being migrated to the new
   `createBot` API; the Telegram harness is a working manual-trigger smoke test — see
@@ -50,49 +57,72 @@ optional MCP tools — no Python, no LangGraph).
 
 It's built on:
 
-- **[`@copilotkit/bot`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/bot)** — the platform-agnostic bot engine.
-- **[`@copilotkit/bot-slack`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/bot-slack)** / **[`-discord`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/bot-discord)** / **[`-telegram`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/bot-telegram)** / **[`-whatsapp`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/bot-whatsapp)** — the platform adapters.
-- **[`@copilotkit/bot-ui`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/bot-ui)** — a cross-platform JSX vocabulary for rich messages (Block Kit on Slack, Components V2 on Discord, HTML on Telegram).
+- **[`@copilotkit/channels`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels)** — the platform-agnostic bot engine.
+- **[`@copilotkit/channels-slack`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-slack)** / **[`-discord`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-discord)** / **[`-telegram`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-telegram)** / **[`-whatsapp`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-whatsapp)** — the platform adapters.
+- **[`@copilotkit/channels-ui`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-ui)** — a cross-platform JSX vocabulary for rich messages (Block Kit on Slack, Components V2 on Discord, HTML on Telegram).
+- **[`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence)** — runs the same KiteBot over the CopilotKit Intelligence Realtime Gateway (managed mode, no platform tokens in this process).
 - **[`@copilotkit/runtime`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/runtime)** — the AG-UI agent backend.
 
 ## Running it
 
-### From the monorepo (works today)
+### From the monorepo
 
-Until the bot SDK packages publish a coherent `0.1.x` set to npm, the dependable path is to run
-this code as `examples/slack` inside the
-[CopilotKit monorepo](https://github.com/CopilotKit/CopilotKit), which builds the adapters from
+If you're working inside the [CopilotKit monorepo](https://github.com/CopilotKit/CopilotKit),
+this code runs there as `examples/slack`, building the `@copilotkit/channels*` adapters from
 source:
 
 ```bash
 pnpm install                              # repo root
 pnpm --filter slack-example notion-mcp    # only if using Notion → http://127.0.0.1:3001/mcp
 pnpm --filter slack-example runtime       # CopilotKit runtime on :8200, agent "triage"
-pnpm --filter slack-example dev           # the bot (tsx watch app/index.ts)
+pnpm --filter slack-example dev           # KiteBot (tsx watch app/index.ts)
 ```
 
-### Standalone (once `@copilotkit/bot-*` publish)
+### Standalone (npm)
 
-`npm install` here, then run the same three processes via this repo's scripts:
+The `@copilotkit/channels*` packages are published on npm, so a plain `npm install` here works
+as-is — no monorepo required:
 
 ```bash
 npm install
 npm run notion-mcp     # terminal 1 — only if using Notion
 npm run runtime        # terminal 2 — the agent backend on :8200
-npm run dev            # terminal 3 — the bot
+npm run dev            # terminal 3 — KiteBot, self-hosted (holds the Slack tokens)
 ```
 
 The chart/diagram renderers need a Chromium binary: `npx playwright install chromium`.
 
-> **Why not standalone yet?** `@copilotkit/bot-telegram`, `-whatsapp`, and `-store-redis` aren't
-> on npm yet, and the published bot packages need a coherent `0.1.x` release. The moment they
-> land, `npm install` in this repo works as-is.
+## Intelligence channel mode
+
+`pnpm channel` (`app/managed.ts`) runs the same KiteBot over the **CopilotKit Intelligence
+Realtime Gateway** instead of a native platform adapter — this process holds **no Slack tokens**;
+Intelligence owns the Slack edge (signed ingress + Connector Outbox egress) and streams render
+frames back over `@copilotkit/channels-intelligence`. It's the managed counterpart to the
+self-hosted `pnpm dev` mode described above.
+
+```bash
+npm run runtime        # terminal 1 — the agent backend on :8200 (same as self-hosted)
+npm run channel        # terminal 2 — the Intelligence-managed KiteBot (tsx app/managed.ts)
+```
+
+Configure it with:
+
+| Variable | What it's for |
+| --- | --- |
+| `INTELLIGENCE_GATEWAY_WS_URL` | The Intelligence Realtime Gateway websocket endpoint. |
+| `INTELLIGENCE_API_KEY` | Auth for the gateway connection. |
+| `INTELLIGENCE_ORG_ID` / `INTELLIGENCE_PROJECT_ID` / `INTELLIGENCE_CHANNEL_ID` | Scopes the connection to your Intelligence org/project/channel. |
+| `INTELLIGENCE_CHANNEL_NAME` | The registered channel name (lowercase kebab). Defaults to `kitebot`. |
+
+The agent backend is still required in this mode — `pnpm runtime` (`runtime.ts`) — the Intelligence
+channel host points its `AGENT_URL` at it exactly like the self-hosted KiteBot does. See
+[`.env.example`](./.env.example) for the full annotated list.
 
 ## 1. Create a Slack app
 
 1. Go to <https://api.slack.com/apps?new_app=1> → **From a manifest** → paste
    [`slack-app-manifest.yaml`](./slack-app-manifest.yaml). The manifest declares all four slash
-   commands, the assistant pane, the `users:read.email` scope, and **Socket Mode** (so the bot
+   commands, the assistant pane, the `users:read.email` scope, and **Socket Mode** (so KiteBot
    connects outbound — no public URL needed).
 2. **OAuth & Permissions** → **Install to Workspace** → copy the `xoxb-` **Bot User OAuth
    Token** → this is your `SLACK_BOT_TOKEN`.
@@ -104,9 +134,10 @@ and summarized under [Other platforms](#other-platforms).)
 
 ## 2. Environment variables
 
-Copy the template and fill in the platform(s) and integrations you want — the bot starts an
+Copy the template and fill in the platform(s) and integrations you want — KiteBot starts an
 adapter for each platform whose secrets are present, and the agent wires up whichever data
-sources have credentials.
+sources have credentials. (Running in [Intelligence channel mode](#intelligence-channel-mode)
+instead uses the `INTELLIGENCE_*` variables in place of the platform tokens below.)
 
 ```bash
 cp .env.example .env
@@ -122,8 +153,8 @@ cp .env.example .env
 | `DISCORD_BOT_TOKEN` / `DISCORD_APP_ID` | Run on Discord. |
 | `TELEGRAM_BOT_TOKEN` | Run on Telegram. |
 | `WHATSAPP_ACCESS_TOKEN` (+ siblings) | Run on WhatsApp Cloud API. |
-| `REDIS_URL` | Optional durable store (see [Redis](#redis-persistence)). |
-| `AGENT_URL` | Where the bot POSTs (defaults to the local runtime: `…/agent/triage/run`). |
+| `INTELLIGENCE_GATEWAY_WS_URL` / `INTELLIGENCE_API_KEY` / `INTELLIGENCE_ORG_ID` / `INTELLIGENCE_PROJECT_ID` / `INTELLIGENCE_CHANNEL_ID` / `INTELLIGENCE_CHANNEL_NAME` | Run in [Intelligence channel mode](#intelligence-channel-mode) instead of holding platform tokens directly. |
+| `AGENT_URL` | Where KiteBot POSTs (defaults to the local runtime: `…/agent/triage/run`). |
 
 Every integration is independent — set only what you need. The full annotated list, including the
 WhatsApp webhook details, is in [`.env.example`](./.env.example).
@@ -168,14 +199,6 @@ The chart/diagram libraries load from a CDN into a **local** headless browser (o
 `CHART_JS_URL` / `MERMAID_URL`) — your data is rendered locally and never sent to a rendering
 service. Requires a Chromium binary: `npx playwright install chromium`.
 
-### Redis persistence
-
-By default, interactive state is in-memory. Pass a
-[`@copilotkit/bot-store-redis`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/bot-store-redis)
-store to `createBot` (set `REDIS_URL`; `docker compose up -d` starts a local Redis) so an
-Approve/Cancel click still resolves **after a restart** — see
-[`app/demo-restart.tsx`](./app/demo-restart.tsx) and the `demo:restart` script.
-
 ## Other platforms
 
 The same `app/` code runs on every platform — `createBot` takes an array of adapters, and
@@ -199,7 +222,7 @@ Four app-owned commands, registered via `createBot({ commands })`
 
 - **`/agent <text>`** — a mention-free entry point; runs the agent with the command text.
 - **`/triage [note]`** — summarizes the conversation and proposes issues to file.
-- **`/preview <title>`** — privately previews the issue the bot would file (only you see it);
+- **`/preview <title>`** — privately previews the issue KiteBot would file (only you see it);
   degrades to a DM where ephemerals aren't supported.
 - **`/file-issue`** — opens a structured issue **modal**; degrades to a conversational flow on
   platforms without modals (e.g. Telegram).
@@ -208,7 +231,7 @@ On Slack, all four must be declared under **Slash Commands** — the manifest al
 
 ## Files → charts, diagrams & tables
 
-Upload a file and the bot analyzes it: images and **PDFs** go straight to the model; CSV/JSON/text
+Upload a file and KiteBot analyzes it: images and **PDFs** go straight to the model; CSV/JSON/text
 are decoded and handed over as text. Then ask it to visualize:
 
 > chart revenue by month · diagram this incident flow · show it as a table
