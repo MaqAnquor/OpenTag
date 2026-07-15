@@ -84,9 +84,9 @@ async function main() {
         // `:wrench:` rows, or pane "is using `tool`…" status). Tools still run;
         // only the display is hidden.
         showToolStatus: false,
-        // Kite keeps DMs conversational and responds to explicit app mentions
+        // KiteBot keeps DMs conversational and responds to explicit app mentions
         // in channels/threads. Plain channel thread replies stay quiet unless
-        // they mention Kite again.
+        // they mention KiteBot again.
         respondTo: {
           directMessages: true,
           appMentions: { reply: "thread" },
