@@ -49,7 +49,7 @@ const openApiHeaders = JSON.stringify({
 // absent from the child env (dotenv loaded it into process.env, so delete it
 // after the spread) — if present, the server ignores OPENAPI_MCP_HEADERS and
 // drops the Notion-Version header.
-const childEnv = {
+const childEnv: NodeJS.ProcessEnv = {
   ...process.env,
   OPENAPI_MCP_HEADERS: openApiHeaders,
   AUTH_TOKEN: authToken,

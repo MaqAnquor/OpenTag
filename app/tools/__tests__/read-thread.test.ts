@@ -75,6 +75,22 @@ describe("read_thread tool", () => {
     expect(out.messages[0]?.user).toBe("unknown");
   });
 
+  it("falls back to the handle when the user has no name", async () => {
+    const ctx = makeCtx([
+      {
+        user: { id: "UBOB", handle: "bob" },
+        text: "on it",
+        ts: "1700000000.000400",
+      },
+    ]);
+
+    const out = (await readThreadTool.handler({}, ctx)) as {
+      messages: Array<{ user: string }>;
+    };
+
+    expect(out.messages[0]?.user).toBe("bob");
+  });
+
   it("calls thread.getMessages once", async () => {
     const ctx = makeCtx([]);
     await readThreadTool.handler({}, ctx);

@@ -39,7 +39,13 @@ export const confirmWriteTool = defineBotTool({
     const choice = await thread.awaitChoice<{ confirmed?: boolean }>(
       <ConfirmWrite action={action} detail={detail} />,
     );
-    return choice?.confirmed
+    if (choice == null) {
+      console.error(
+        "[confirm-write] no choice resolved (timeout/dismissed)",
+      );
+      return "NO RESPONSE — the confirmation card was dismissed or timed out; do not write.";
+    }
+    return choice.confirmed
       ? "The user APPROVED the write — proceed."
       : "The user DECLINED — do not write; acknowledge and stop.";
   },

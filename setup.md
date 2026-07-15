@@ -42,7 +42,8 @@ mode](#intelligence-channel-mode)). Both modes talk to the same agent backend
 | Multi-adapter wiring (Slack/Discord/Telegram/WhatsApp, secret-gated) | [`app/index.ts`](./app/index.ts)                                   |
 | `read_thread` — grounds the agent in the real conversation           | [`app/tools/read-thread.ts`](./app/tools/read-thread.ts)           |
 | Render-tools + JSX components (issue card/list, Notion pages)        | [`app/tools/render-tools.tsx`](./app/tools/render-tools.tsx), [`app/components/`](./app/components/) |
-| Chart / diagram / table rendering (Playwright → PNG)                 | [`app/tools/render-chart.tsx`](./app/tools/render-chart.tsx), `render-diagram.tsx`, `render-table.tsx`, [`app/render/`](./app/render/) |
+| Chart / diagram rendering (Playwright → PNG)                         | [`app/tools/render-chart.tsx`](./app/tools/render-chart.tsx), `render-diagram.tsx`, [`app/render/`](./app/render/) |
+| Table rendering (native `<Table>` block, monospace fallback)         | [`app/tools/render-table.tsx`](./app/tools/render-table.tsx)       |
 | Status / incident / links showcase cards                             | [`app/tools/showcase-tools.tsx`](./app/tools/showcase-tools.tsx), [`app/components/_status.ts`](./app/components/_status.ts) |
 | Blocking **human-in-the-loop** gate (`confirm_write`)                | [`app/human-in-the-loop/confirm-write.tsx`](./app/human-in-the-loop/confirm-write.tsx) |
 | Slash commands (`/agent`, `/triage`, `/preview`, `/file-issue`)      | [`app/commands/index.ts`](./app/commands/index.ts)                 |
