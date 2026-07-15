@@ -6,6 +6,7 @@ The agent uses Deep Agents for planning and filesystem operations, with optional
 """
 
 import os
+import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -75,7 +76,16 @@ def main():
 
     host = os.getenv("SERVER_HOST", "0.0.0.0")
     # Honor Railway's injected $PORT first, falling back to SERVER_PORT for local dev
-    port = int(os.getenv("PORT") or os.getenv("SERVER_PORT", "8123"))
+    raw_port = os.getenv("PORT") or os.getenv("SERVER_PORT", "8123")
+    try:
+        port = int(raw_port)
+        if not (1 <= port <= 65535):
+            raise ValueError("out of range")
+    except ValueError:
+        print(
+            f'[ERROR] Invalid PORT/SERVER_PORT: "{raw_port}" — must be an integer between 1 and 65535'
+        )
+        sys.exit(1)
     reload = os.getenv("AGENT_RELOAD", "").lower() in ("1", "true", "yes")
 
     print(f"[SERVER] Starting on {host}:{port}")

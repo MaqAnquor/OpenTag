@@ -31,8 +31,24 @@ if (!notionToken) {
 }
 
 // Port the sidecar listens on. Must agree with NOTION_MCP_URL in runtime.ts
-// (default http://127.0.0.1:3001/mcp).
-const port = process.env["NOTION_MCP_PORT"] ?? "3001";
+// (default http://127.0.0.1:3001/mcp). Validated up front because it's
+// passed as a `--port` arg to a `shell: true` spawn below — an unvalidated
+// value with spaces/shell metacharacters could mangle or inject the command.
+const rawPort = process.env["NOTION_MCP_PORT"];
+if (rawPort !== undefined && !/^\d+$/.test(rawPort)) {
+  console.error(
+    `[notion-mcp] NOTION_MCP_PORT must be an integer between 1 and 65535, got: ${JSON.stringify(rawPort)}`,
+  );
+  process.exit(1);
+}
+const portNumber = rawPort === undefined ? 3001 : Number(rawPort);
+if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+  console.error(
+    `[notion-mcp] NOTION_MCP_PORT must be an integer between 1 and 65535, got: ${JSON.stringify(rawPort)}`,
+  );
+  process.exit(1);
+}
+const port = String(portNumber);
 
 // Notion's REST API requires a `Notion-Version` header. Authenticate via
 // OPENAPI_MCP_HEADERS (carrying BOTH Authorization and Notion-Version) rather
@@ -76,6 +92,9 @@ const child = spawn(
   },
 );
 
-child.on("exit", (code) => process.exit(code ?? 0));
+// code is null when the child died from a signal (SIGKILL/OOM/SIGSEGV, etc.)
+// rather than a normal exit; map that to a non-zero status so a supervisor
+// or healthcheck can detect the crash instead of seeing a false "success".
+child.on("exit", (code) => process.exit(code ?? 1));
 process.on("SIGINT", () => child.kill("SIGINT"));
 process.on("SIGTERM", () => child.kill("SIGTERM"));

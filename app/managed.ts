@@ -176,8 +176,13 @@ async function main() {
       process.env.INTELLIGENCE_RUNTIME_INSTANCE_ID ??
       `rti_${randomUUID().replace(/-/g, "")}`,
     adapter: "slack",
-    // DEBUG-ONLY: meta can contain message content — drop or trim in production.
-    log: (msg, meta) => console.log(`[channel] ${msg}`, meta ?? ""),
+    // meta can contain message content, so it is gated behind CHANNEL_DEBUG
+    // and omitted from stdout/logs by default.
+    log: (msg, meta) =>
+      console.log(
+        `[channel] ${msg}`,
+        process.env.CHANNEL_DEBUG ? (meta ?? "") : "",
+      ),
   });
   console.log(
     `[channel] KiteBot channel "${channelName}" started over Realtime Gateway on project ${projectId}`,

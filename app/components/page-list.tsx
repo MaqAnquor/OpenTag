@@ -57,14 +57,15 @@ export function PageList({ heading, pages }: PageListProps): BotNode {
       ? `[**${page.title}**](${page.url})`
       : `**${page.title}**`;
 
-    const meta = [
-      page.snippet,
-      page.edited
-        ? `🕒 edited ${page.edited}${page.editedBy ? ` by ${page.editedBy}` : ""}`
-        : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    // `edited` and `editedBy` are independent schema fields — an agent may
+    // supply either one without the other, so compose them rather than
+    // gating the whole line on `edited` being present.
+    const editedLine =
+      page.edited || page.editedBy
+        ? `🕒 edited${page.edited ? ` ${page.edited}` : ""}${page.editedBy ? ` by ${page.editedBy}` : ""}`
+        : null;
+
+    const meta = [page.snippet, editedLine].filter(Boolean).join("\n");
 
     rows.push(<Section>{`📄  ${titleLink}`}</Section>);
     if (meta) rows.push(<Context>{meta}</Context>);

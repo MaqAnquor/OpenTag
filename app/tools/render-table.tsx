@@ -73,10 +73,14 @@ export function clamp(
   if (rows.length > MAX_DATA_ROWS) {
     notes.push(`only the first ${MAX_DATA_ROWS} of ${rows.length} rows shown`);
   }
-  const extraCellRows = dataRows.filter((r) => r.length > cols.length).length;
+  // Compare against the ORIGINAL declared column count, not the clamped
+  // `cols.length` — otherwise a well-formed table with >MAX_COLUMNS columns
+  // would have every row spuriously flagged as "extra cells dropped" (the
+  // column truncation itself is already reported above).
+  const extraCellRows = dataRows.filter((r) => r.length > columns.length).length;
   if (extraCellRows > 0) {
     notes.push(
-      `${extraCellRows} row(s) had extra cells beyond the ${cols.length} ` +
+      `${extraCellRows} row(s) had extra cells beyond the ${columns.length} ` +
         "columns; extras were dropped",
     );
   }
@@ -102,7 +106,14 @@ export function toMonospaceTable(cols: Column[], dataRows: string[][]): string {
       .map((col, c) => {
         const cell = row[c] ?? "";
         const width = widths[c] ?? 0;
-        return col.align === "right" ? cell.padStart(width) : cell.padEnd(width);
+        if (col.align === "right") return cell.padStart(width);
+        if (col.align === "center") {
+          const total = Math.max(width - cell.length, 0);
+          const left = Math.floor(total / 2);
+          const right = total - left;
+          return " ".repeat(left) + cell + " ".repeat(right);
+        }
+        return cell.padEnd(width);
       })
       .join(" | ") +
     " |";

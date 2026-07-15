@@ -297,6 +297,26 @@ describe("PageList component", () => {
     expect(accent).toBe("#2F3437");
   });
 
+  it("renders the editor even when no human-readable `edited` timestamp is given", () => {
+    const { blocks } = renderSlackMessage(
+      renderToIR(
+        <PageList
+          pages={[
+            {
+              title: "Runbook without a timestamp",
+              editedBy: "Alem",
+            },
+          ]}
+        />,
+      ),
+    );
+    const json = JSON.stringify(blocks);
+    // `editedBy` is an independent schema field from `edited` — it must not
+    // be silently dropped just because `edited` is absent.
+    expect(json).toContain("Alem");
+    expect(json).toContain("🕒 edited by Alem");
+  });
+
   it("caps rendered pages at 15 and reports the overflow in the footer", () => {
     const pages = Array.from({ length: 20 }, (_, i) => ({
       title: `Page ${i + 1}`,

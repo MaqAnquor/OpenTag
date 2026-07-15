@@ -54,11 +54,8 @@ export const renderDiagramTool = defineBotTool({
         return `Diagram render failed: ${res.error ?? "upload was rejected"}. Fix the Mermaid syntax and retry.`;
       }
       // Post the Context caption only after the upload succeeds, so a failed
-      // upload never leaves a caption in the thread promising an image that
-      // never lands (see render-chart.tsx).
-      await ctx.thread.post(
-        <Context>{`📐  *${title ?? "Diagram"}* — diagram below.`}</Context>,
-      );
+      // upload never leaves a caption in the thread (see render-chart.tsx).
+      await ctx.thread.post(<Context>{`📐  *${title ?? "Diagram"}*`}</Context>);
       return "Rendered and posted the diagram image to the thread.";
     } catch (e) {
       // Surface the Mermaid parse error so the agent can repair the source.

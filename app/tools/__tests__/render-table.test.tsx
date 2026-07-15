@@ -60,6 +60,23 @@ describe("toMonospaceTable", () => {
     // Column 1 ("Issue", no align — defaults left) still pads on the right.
     expect(out).toContain("| CPK-1 |");
   });
+
+  it("center-aligns cells (padded roughly evenly on both sides) in columns with align: 'center'", () => {
+    const centerCols = [
+      { header: "Issue" },
+      { header: "Status", align: "center" as const },
+    ];
+    const centerRows = [
+      ["CPK-1", "OK"],
+      ["CPK-2", "FAILED"],
+    ];
+    // Column 2 ("Status", align: center) is 6 chars wide ("FAILED").
+    // "OK" (2) needs 4 spaces total: 2 left, 2 right.
+    const out = toMonospaceTable(centerCols, centerRows);
+    expect(out).toContain("| CPK-1 |   OK   |");
+    // "FAILED" (6) exactly fills the width — no padding needed.
+    expect(out).toContain("| CPK-2 | FAILED |");
+  });
 });
 
 describe("render_table tool", () => {
@@ -159,6 +176,12 @@ describe("render_table tool", () => {
     expect(table?.rows?.[0]).toHaveLength(20);
     const text = JSON.stringify(blocks);
     expect(text).toContain("only the first 20 of 25 columns shown");
+    // Well-formed rows (one cell per *declared* column) must NOT also trigger
+    // the extra-cells note — that would be a misleading double note, since
+    // every row here has exactly 25 cells for 25 declared columns; the only
+    // "loss" is the column truncation already reported above.
+    expect(out).not.toContain("extra cells");
+    expect(text).not.toContain("extra cells");
   });
 });
 
@@ -173,6 +196,22 @@ describe("clamp", () => {
     const { notes } = clamp(COLS, [["CPK-1", "High", "extra-cell"]]);
     expect(notes).toEqual([
       "1 row(s) had extra cells beyond the 2 columns; extras were dropped",
+    ]);
+  });
+
+  it("does not flag extra cells for a well-formed table with more than 20 declared columns", () => {
+    // 25 declared columns get clamped to 20 for the native Table, but every
+    // row here has exactly 25 cells — one per *declared* column — so this is
+    // NOT malformed. The extra-cell note must compare against the original
+    // declared column count, not the clamped one, or every row in a wide but
+    // well-formed table would spuriously "have extra cells".
+    const manyCols = Array.from({ length: 25 }, (_, i) => ({
+      header: `c${i}`,
+    }));
+    const wellFormedRow = manyCols.map((_, i) => `v${i}`);
+    const { notes } = clamp(manyCols, [wellFormedRow, wellFormedRow]);
+    expect(notes).toEqual([
+      "only the first 20 of 25 columns shown",
     ]);
   });
 });

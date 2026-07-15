@@ -18,9 +18,7 @@ const schema = z.object({
     .describe("Short title shown as the image's filename/caption."),
   chartSpec: z
     .object({
-      type: z
-        .string()
-        .describe("'bar' | 'line' | 'pie' | 'doughnut' | 'scatter' | 'radar'."),
+      type: z.string().describe("'bar' | 'line' | 'pie' | 'doughnut' | 'radar'."),
       data: z
         .object({
           labels: z
@@ -86,12 +84,9 @@ export const renderChartTool = defineBotTool({
         return `Chart render failed: ${res.error ?? "upload was rejected"}`;
       }
       // Post the Context caption only after the upload succeeds, so a failed
-      // upload never leaves a caption in the thread promising an image that
-      // never lands. Also doubles as a render-tool demo of a JSX <Context>
-      // card.
-      await ctx.thread.post(
-        <Context>{`📊  *${title ?? "Chart"}* — chart below.`}</Context>,
-      );
+      // upload never leaves a caption in the thread. Also doubles as a
+      // render-tool demo of a JSX <Context> card.
+      await ctx.thread.post(<Context>{`📊  *${title ?? "Chart"}*`}</Context>);
       return "Rendered and posted the chart image to the thread.";
     } catch (e) {
       return `Chart render failed: ${(e as Error).message}`;

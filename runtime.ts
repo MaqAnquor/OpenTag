@@ -353,11 +353,11 @@ const listener = createCopilotNodeListener({
   cors: true,
 });
 
-const port = Number(process.env["PORT"] ?? 8200);
+const rawPort = process.env["PORT"];
+const port =
+  rawPort && rawPort.trim() !== "" ? Number(rawPort) : 8200;
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  console.error(
-    `Invalid PORT: "${process.env["PORT"]}" is not a valid port number`,
-  );
+  console.error(`Invalid PORT: "${rawPort}" is not a valid port number`);
   process.exit(1);
 }
 createServer(listener).listen(port, () => {
