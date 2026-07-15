@@ -1,7 +1,7 @@
 /**
  * `issue_list` — renders a set of Linear issues as a compact Block Kit card:
  * a header, ONE section with one scannable line per issue (status dot + linked
- * identifier + title + assignee · updated), and a count footer.
+ * identifier + title + assignee · priority · updated), and a count footer.
  *
  * This is deliberately a fixed THREE-block layout (header + section + context)
  * regardless of issue count: a card-per-issue layout (~3 blocks each) blows
@@ -68,7 +68,7 @@ export function IssueList({ heading, issues }: IssueListProps): BotNode {
       issue.title.length > TITLE_MAX
         ? `${issue.title.slice(0, TITLE_MAX)}…`
         : issue.title;
-    const meta = `${issue.assignee ?? "unassigned"}${issue.updated ? ` · ${issue.updated}` : ""}`;
+    const meta = `${issue.assignee ?? "unassigned"}${issue.priority ? ` · ${issue.priority}` : ""}${issue.updated ? ` · ${issue.updated}` : ""}`;
     return `${stateGlyph(issue.state)} ${idLink} ${title} — ${meta}`;
   });
 

@@ -85,7 +85,23 @@ describe("example slash commands", () => {
     );
   });
 
-  it("/preview posts an ephemeral draft and reports the native path", async () => {
+  it("/triage with text passes the note through in the triage prompt", async () => {
+    const thread = fakeThread();
+    await byName("triage").handler(
+      ctx({
+        command: "triage",
+        text: "checkout is failing",
+        thread: thread as never,
+      }),
+    );
+    expect(thread.runAgent).toHaveBeenCalledTimes(1);
+    expect(thread.runAgent.mock.calls[0]![0]).toMatchObject({
+      prompt:
+        "Triage this and propose Linear issues to file: checkout is failing",
+    });
+  });
+
+  it("/preview posts an ephemeral draft on the native (non-fallback) path", async () => {
     const preview = appCommands.find((c) => c.name === "preview")!;
     expect(preview).toBeDefined();
     const postEphemeral = vi
@@ -104,6 +120,8 @@ describe("example slash commands", () => {
     const [user, , opts] = postEphemeral.mock.calls[0]!;
     expect(user).toEqual({ id: "U1", name: "Ada" });
     expect(opts).toEqual({ fallbackToDM: true });
+    // Native path (ok, no fallback) is silent — no follow-up narration post.
+    expect(post).not.toHaveBeenCalled();
   });
 
   it("/preview asks for a title when none is given", async () => {
@@ -120,6 +138,24 @@ describe("example slash commands", () => {
     } as never);
     expect(post).toHaveBeenCalledWith(expect.stringContaining("Usage"));
     expect(postEphemeral).not.toHaveBeenCalled();
+  });
+
+  it("/preview with no user says it can't tell who you are", async () => {
+    const preview = byName("preview");
+    const postEphemeral = vi.fn();
+    const post = vi.fn().mockResolvedValue({ id: "1" });
+    await preview.handler({
+      thread: { postEphemeral, post } as never,
+      command: "preview",
+      text: "Login broken",
+      options: {},
+      user: undefined,
+      platform: "slack",
+    } as never);
+    expect(postEphemeral).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledWith(
+      expect.stringMatching(/couldn.t tell who you are/i),
+    );
   });
 
   it("/file-issue opens the rich modal on Slack", async () => {

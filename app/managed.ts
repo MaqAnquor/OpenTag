@@ -18,6 +18,7 @@ import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { createBot } from "@copilotkit/channels";
 import type { Bot } from "@copilotkit/channels";
+import type { AgentContentPart } from "@copilotkit/channels-ui";
 import {
   SanitizingHttpAgent,
   defaultSlackTools,
@@ -50,6 +51,34 @@ export interface CreateKiteBotOptions {
 }
 
 /**
+ * Pick the prompt to send to the agent for the current turn. Managed history
+ * does NOT include the in-flight turn, so the current message is always
+ * passed explicitly — preferring multimodal parts when present.
+ */
+export function promptFromMessage(message: {
+  contentParts?: unknown[];
+  text: string;
+}): unknown {
+  return message.contentParts?.length ? message.contentParts : message.text;
+}
+
+/** Build the Authorization header object forwarded to the agent, if any. */
+export function buildAgentHeaders(
+  authHeader?: string,
+): { Authorization: string } | undefined {
+  return authHeader ? { Authorization: authHeader } : undefined;
+}
+
+/** Parse and validate INTELLIGENCE_PROJECT_ID, throwing on any invalid value. */
+export function parseProjectId(raw: string | undefined): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`Invalid INTELLIGENCE_PROJECT_ID: "${raw}"`);
+  }
+  return n;
+}
+
+/**
  * Build the KiteBot bot: same tools/context/commands/handlers as the native
  * bot, minus any platform adapter (the intelligenceAdapter is attached at
  * activation by startChannelsOverRealtimeGateway). Pure — no network, no env
@@ -57,9 +86,7 @@ export interface CreateKiteBotOptions {
  */
 export function createKiteBot(opts: CreateKiteBotOptions): Bot {
   const channelName = opts.channelName ?? "kitebot";
-  const agentHeaders = opts.agentAuthHeader
-    ? { Authorization: opts.agentAuthHeader }
-    : undefined;
+  const agentHeaders = buildAgentHeaders(opts.agentAuthHeader);
 
   const bot = createBot({
     name: channelName,
@@ -82,9 +109,7 @@ export function createKiteBot(opts: CreateKiteBotOptions): Bot {
   bot.onMention(async ({ thread, message }) => {
     try {
       await thread.runAgent({
-        prompt: message.contentParts?.length
-          ? message.contentParts
-          : message.text,
+        prompt: promptFromMessage(message) as string | AgentContentPart[],
         context: senderContext(message.user, thread.platform),
       });
     } catch (err) {
@@ -101,33 +126,39 @@ export function createKiteBot(opts: CreateKiteBotOptions): Bot {
 
   bot.onThreadStarted(async ({ thread, user }) => {
     if (!user?.name) return;
-    await thread.setSuggestedPrompts([
-      {
-        title: `Triage ${user.name}'s issues`,
-        message: "Triage my open issues",
-      },
-      {
-        title: "What shipped this week?",
-        message: "Summarize what shipped this week",
-      },
-    ]);
+    try {
+      await thread.setSuggestedPrompts([
+        {
+          title: `Triage ${user.name}'s issues`,
+          message: "Triage my open issues",
+        },
+        {
+          title: "What shipped this week?",
+          message: "Summarize what shipped this week",
+        },
+      ]);
+    } catch (err) {
+      console.error("[channel] onThreadStarted failed", err);
+    }
   });
 
   return bot;
 }
 
 async function main() {
+  const channelName = process.env.INTELLIGENCE_CHANNEL_NAME ?? "kitebot";
+
   const bot = createKiteBot({
     agentUrl: required("AGENT_URL"),
     agentAuthHeader: process.env.AGENT_AUTH_HEADER,
-    channelName: process.env.INTELLIGENCE_CHANNEL_NAME,
+    channelName,
   });
 
-  const projectId = Number(required("INTELLIGENCE_PROJECT_ID"));
-  if (!Number.isInteger(projectId) || projectId <= 0) {
-    console.error(
-      `Invalid INTELLIGENCE_PROJECT_ID: "${process.env.INTELLIGENCE_PROJECT_ID}"`,
-    );
+  let projectId: number;
+  try {
+    projectId = parseProjectId(process.env.INTELLIGENCE_PROJECT_ID);
+  } catch (e) {
+    console.error((e as Error).message);
     process.exit(1);
   }
 
@@ -138,7 +169,7 @@ async function main() {
       organizationId: required("INTELLIGENCE_ORG_ID"),
       projectId,
       channelId: required("INTELLIGENCE_CHANNEL_ID"),
-      channelName: bot.name!,
+      channelName,
     },
     runtimeInstanceId:
       process.env.INTELLIGENCE_RUNTIME_INSTANCE_ID ??
@@ -148,7 +179,7 @@ async function main() {
     log: (msg, meta) => console.log(`[channel] ${msg}`, meta ?? ""),
   });
   console.log(
-    `[channel] KiteBot channel "${bot.name}" started over Realtime Gateway on project ${projectId}`,
+    `[channel] KiteBot channel "${channelName}" started over Realtime Gateway on project ${projectId}`,
   );
 
   const shutdown = async (signal: string) => {

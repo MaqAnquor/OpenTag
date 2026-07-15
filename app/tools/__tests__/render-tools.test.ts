@@ -2,9 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderToIR } from "@copilotkit/channels-ui";
 import { renderSlackMessage } from "@copilotkit/channels-slack";
 
+// The exact PNG buffer instance `renderChart` resolves with, so tests can
+// assert `postFile` was handed the real render output — not just a filename.
+const CHART_PNG = Buffer.from("CHARTPNG");
+const DIAGRAM_PNG = Buffer.from("DIAGRAMPNG");
+
 // Mock the local renderers so no headless browser is launched.
-const renderChart = vi.fn(async () => Buffer.from("CHARTPNG"));
-const renderDiagram = vi.fn(async () => Buffer.from("DIAGRAMPNG"));
+const renderChart = vi.fn(async () => CHART_PNG);
+const renderDiagram = vi.fn(async () => DIAGRAM_PNG);
 vi.mock("../../render/chart.js", () => ({ renderChart }));
 vi.mock("../../render/diagram.js", () => ({ renderDiagram }));
 
@@ -14,8 +19,11 @@ const { renderDiagramTool } = await import("../render-diagram.js");
 /** The ctx a BotTool handler receives. */
 type HandlerCtx = Parameters<typeof renderChartTool.handler>[1];
 
-function makeCtx() {
-  const postFile = vi.fn(async () => ({ ok: true, fileId: "F1" }));
+function makeCtx(opts?: {
+  postFileResult?: { ok: boolean; fileId?: string; error?: string };
+}) {
+  const postFileResult = opts?.postFileResult ?? { ok: true, fileId: "F1" };
+  const postFile = vi.fn(async () => postFileResult);
   const posts: unknown[] = [];
   const thread = {
     post: vi.fn(async (ui: unknown) => {
@@ -51,6 +59,7 @@ describe("render_chart tool", () => {
     );
     expect(postFile).toHaveBeenCalledWith(
       expect.objectContaining({
+        bytes: CHART_PNG,
         filename: "revenue-q2.png",
         title: "Revenue Q2",
       }),
@@ -80,6 +89,57 @@ describe("render_chart tool", () => {
     expect(out).toContain("Chart render failed");
     expect(out).toContain("Chart.js render failed");
     expect(postFile).not.toHaveBeenCalled();
+  });
+
+  it("accepts a stringified chartSpec and parses it before rendering", async () => {
+    const { ctx, postFile } = makeCtx();
+    const out = (await renderChartTool.handler(
+      {
+        title: "Stringified",
+        chartSpec: JSON.stringify({
+          type: "line",
+          data: { labels: ["a", "b"], datasets: [{ data: [1, 2] }] },
+        }) as never,
+      },
+      ctx,
+    )) as string;
+    expect(renderChart).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "line" }),
+    );
+    expect(postFile).toHaveBeenCalledWith(
+      expect.objectContaining({ bytes: CHART_PNG }),
+    );
+    expect(out).toBe("Rendered and posted the chart image to the thread.");
+  });
+
+  it("returns an error (does not throw or render) when the stringified chartSpec is unparseable", async () => {
+    const { ctx, postFile } = makeCtx();
+    const out = (await renderChartTool.handler(
+      { title: "Broken", chartSpec: "{not json" as never },
+      ctx,
+    )) as string;
+    expect(out).toContain("Chart render failed");
+    expect(out).toContain("unparseable string");
+    expect(renderChart).not.toHaveBeenCalled();
+    expect(postFile).not.toHaveBeenCalled();
+  });
+
+  it("tells the agent when postFile rejects the upload (res.ok === false)", async () => {
+    const { ctx } = makeCtx({
+      postFileResult: { ok: false, error: "file too large" },
+    });
+    const out = (await renderChartTool.handler(
+      {
+        title: "Too Big",
+        chartSpec: {
+          type: "bar",
+          data: { labels: ["a"], datasets: [{ data: [1] }] },
+        },
+      },
+      ctx,
+    )) as string;
+    expect(out).toContain("Chart render failed");
+    expect(out).toContain("file too large");
   });
 });
 

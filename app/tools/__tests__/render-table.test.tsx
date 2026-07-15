@@ -46,9 +46,19 @@ describe("toMonospaceTable", () => {
     const out = toMonospaceTable(COLS, ROWS);
     expect(out.startsWith("```\n")).toBe(true);
     expect(out.endsWith("\n```")).toBe(true);
-    // "Priority" (8) is the widest in column 2, so "High" is padded to width 8.
-    expect(out).toContain("| CPK-1 | High     |");
+    // "Priority" (8) is the widest in column 2 and is align: "right", so
+    // "High" (4) is left-padded (padStart) to width 8, not right-padded.
+    expect(out).toContain("| CPK-1 |     High |");
     expect(out).toContain("| Issue | Priority |");
+  });
+
+  it("right-aligns cells (padStart) in columns with align: 'right'", () => {
+    // Column 2 ("Priority", align: right) is 8 chars wide; "Low" (3) should be
+    // left-padded with 5 spaces, not right-padded (padEnd) like a left-aligned cell.
+    const out = toMonospaceTable(COLS, ROWS);
+    expect(out).toContain("| CPK-2 |      Low |");
+    // Column 1 ("Issue", no align — defaults left) still pads on the right.
+    expect(out).toContain("| CPK-1 |");
   });
 });
 
@@ -118,13 +128,17 @@ describe("render_table tool", () => {
       { columns: COLS, rows: manyRows },
       ctx,
     )) as string;
-    expect(out).toBe("Rendered the table for the user.");
+    // The drop is reported back to the agent...
+    expect(out).toContain("only the first 99 of 150 rows shown");
     const { blocks } = renderSlackMessage(renderToIR(posts[0] as never));
     const table = blocks.find((b) => b.type === "table") as
       | TableBlock
       | undefined;
     // 99 data rows + 1 header row.
     expect(table?.rows).toHaveLength(100);
+    // ...and also posted into the thread so the user sees it, not just the agent.
+    const text = JSON.stringify(blocks);
+    expect(text).toContain("only the first 99 of 150 rows shown");
   });
 
   it("clamps to 20 columns and reports the drop", async () => {
@@ -137,12 +151,14 @@ describe("render_table tool", () => {
       { columns: manyCols, rows: [wideRow] },
       ctx,
     )) as string;
-    expect(out).toBe("Rendered the table for the user.");
+    expect(out).toContain("only the first 20 of 25 columns shown");
     const { blocks } = renderSlackMessage(renderToIR(posts[0] as never));
     const table = blocks.find((b) => b.type === "table") as
       | TableBlock
       | undefined;
     expect(table?.rows?.[0]).toHaveLength(20);
+    const text = JSON.stringify(blocks);
+    expect(text).toContain("only the first 20 of 25 columns shown");
   });
 });
 

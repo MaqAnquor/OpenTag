@@ -3,6 +3,13 @@
  * a header, then one row per page (📄 linked title + a greyed snippet and
  * optional last-edited), with dividers and a count footer.
  *
+ * Each page row renders as its own section (+ optional context + divider),
+ * so a long list produces many blocks — unlike `issue_list`, which folds
+ * every issue into a single fixed section. To avoid blowing past Slack's
+ * per-attachment block limit (and getting the whole message rejected with
+ * `invalid_attachments`), we cap the rendered rows at `MAX` and surface the
+ * overflow in the footer, mirroring `issue-list.tsx`'s approach.
+ *
  * The agent searches Notion via MCP and passes the pages it wants to
  * surface; the Slack formatting lives here.
  *
@@ -38,10 +45,14 @@ export const pageListSchema = z.object({
 export type PageListProps = z.infer<typeof pageListSchema>;
 type Page = z.infer<typeof pageSchema>;
 
+/** Max pages rendered inline; the rest are summarized in the footer. */
+const MAX = 15;
+
 /** Render a list of Notion pages as a Block Kit card. */
 export function PageList({ heading, pages }: PageListProps): BotNode {
+  const shown = pages.slice(0, MAX);
   const rows: BotNode[] = [];
-  pages.forEach((page: Page, i: number) => {
+  shown.forEach((page: Page, i: number) => {
     const titleLink = page.url
       ? `[**${page.title}**](${page.url})`
       : `**${page.title}**`;
@@ -57,14 +68,19 @@ export function PageList({ heading, pages }: PageListProps): BotNode {
 
     rows.push(<Section>{`📄  ${titleLink}`}</Section>);
     if (meta) rows.push(<Context>{meta}</Context>);
-    if (i < pages.length - 1) rows.push(<Divider />);
+    if (i < shown.length - 1) rows.push(<Divider />);
   });
+
+  const footer =
+    pages.length > MAX
+      ? `Showing ${MAX} of ${pages.length} pages`
+      : `${pages.length} page${pages.length === 1 ? "" : "s"}`;
 
   return (
     <Message accent={ACCENT.notion}>
       <Header>{`📚  ${heading ?? "Notion pages"}`}</Header>
       {rows}
-      <Context>{`${pages.length} page${pages.length === 1 ? "" : "s"}`}</Context>
+      <Context>{footer}</Context>
     </Message>
   );
 }

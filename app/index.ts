@@ -228,7 +228,9 @@ async function main() {
       console.error("[bot] agent run failed", err);
       await thread
         .post("Sorry — I hit an error handling that. Please try again.")
-        .catch(() => {});
+        .catch((postErr: unknown) =>
+          console.error("[bot] failed to post agent error", postErr),
+        );
     }
   });
 
@@ -263,13 +265,27 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     console.log(`\n[bot] received ${signal}, stopping…`);
-    await bot.stop();
+    let exitCode = 0;
+    try {
+      await bot.stop();
+    } catch (err) {
+      console.error("[bot] error stopping bot", err);
+      exitCode = 1;
+    }
     // Tear down the shared headless browser used for chart/diagram rendering.
-    await closeBrowser();
-    process.exit(0);
+    await closeBrowser().catch((err: unknown) =>
+      console.error("[bot] browser cleanup failed (continuing shutdown)", err),
+    );
+    process.exit(exitCode);
   };
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  const runShutdown = (signal: string): void => {
+    shutdown(signal).catch((err: unknown) => {
+      console.error(`[bot] fatal during ${signal} shutdown`, err);
+      process.exit(1);
+    });
+  };
+  process.on("SIGINT", () => runShutdown("SIGINT"));
+  process.on("SIGTERM", () => runShutdown("SIGTERM"));
 }
 
 // Fail loud, not silent: surface any stray async error (e.g. a throw deep in an
