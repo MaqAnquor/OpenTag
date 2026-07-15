@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a Python `agent/` service to OpenTag — a `deepagents` deep-research agent (planner + virtual filesystem + Tavily web research, optional Notion/Linear internal sources) served over AG-UI — and point KiteBot's channel host at it via `AGENT_URL`.
+**Goal:** Add a Python `agent/` service to OpenTag — a `deepagents` deep-research agent (planner + virtual filesystem + optional Tavily web research + optional Notion/Linear internal sources) served over AG-UI — and point KiteBot's channel host at it via `AGENT_URL`.
+
+**Only `OPENAI_API_KEY` is required.** `TAVILY_API_KEY` is **optional**: without it the `research` web tool is simply not loaded, and the agent still chats, plans, uses its filesystem, and — critically — generates UI components (calls KiteBot's forwarded generative-UI tools). With it, live web research turns on. The definition of "working" is: **chat + UI-component generation with `OPENAI_API_KEY` alone.**
 
 **Architecture:** A standalone FastAPI/uvicorn service (`agent/`, Python 3.12, `uv`). `agent.py` builds a `create_deep_agent` graph; `main.py` serves it over AG-UI with `add_langgraph_fastapi_endpoint(LangGraphAGUIAgent(graph, config), path="/")` on `:8123`; `tools.py` provides the Tavily `research()` tool. The Phase-1 channel host is unchanged except `AGENT_URL` → `http://localhost:8123/`. A spike resolves whether KiteBot's forwarded generative-UI tools render as cards (primary) or need a markdown fallback.
 
@@ -66,7 +68,11 @@ py-modules = ["agent", "main", "tools"]
 
 - [ ] **Step 2: `agent/tools.py`** — port the showcase `tools.py` verbatim (the `_do_internet_search` helper, the `@tool internet_search`, and the thread-isolated `@tool research`), changing only the default model fallback `"gpt-5.2"` → `"gpt-5.5"` in the two `os.environ.get("OPENAI_MODEL", ...)` calls. (Full source: `examples/showcases/deep-agents/agent/tools.py` — fetched into the spec's grounding; copy it exactly with that one substitution.)
 
-- [ ] **Step 3: `agent/agent.py`** — port the showcase `agent.py` verbatim, with two edits: default model `"gpt-5.2"` → `"gpt-5.5"`; keep `MAIN_SYSTEM_PROMPT`, `build_agent()`, `create_deep_agent(model=llm, system_prompt=MAIN_SYSTEM_PROMPT, tools=[research], middleware=[CopilotKitMiddleware()], checkpointer=MemorySaver())`, and the `.with_config({"recursion_limit": 100})` return.
+- [ ] **Step 3: `agent/agent.py`** — port the showcase `agent.py` with these edits:
+  - default model `"gpt-5.2"` → `"gpt-5.5"`.
+  - **`OPENAI_API_KEY` required, `TAVILY_API_KEY` OPTIONAL:** keep the `OPENAI_API_KEY` guard (raise if missing); **remove** the `TAVILY_API_KEY` `raise RuntimeError`. Instead: `has_research = bool(os.environ.get("TAVILY_API_KEY"))` and `main_tools = [research] if has_research else []`.
+  - Adapt `MAIN_SYSTEM_PROMPT` so it works both ways: when research is available, the current plan→research→synthesize workflow; when it is NOT, the agent answers from its own knowledge, still uses `write_todos`/filesystem, still renders results as UI components, and states plainly that it can't do live web lookups. Implement this as a base prompt + a conditional research paragraph appended only when `has_research` (do not hard-require the `research()` tool in the base text).
+  - Keep `create_deep_agent(model=llm, system_prompt=<composed prompt>, tools=main_tools, middleware=[CopilotKitMiddleware()], checkpointer=MemorySaver())` and the `.with_config({"recursion_limit": 100})` return. Log `research: enabled/disabled`.
 
 - [ ] **Step 4: `agent/main.py`** — port the showcase `main.py`, changing: the `LangGraphAGUIAgent(name="kitebot_research", description="KiteBot deep research assistant — plans, searches, and synthesizes cited briefs", ...)`; keep `/health` (update `"service": "kitebot-research-agent"`), the `copilotkit_customize_config(emit_tool_calls=[...])` + `recursion_limit`, and `add_langgraph_fastapi_endpoint(..., path="/")`. Default `SERVER_PORT` `8123`.
 
@@ -84,8 +90,8 @@ __pycache__/
 
 Run: `cd agent && uv sync`
 Expected: resolves all deps (Python 3.12), creates `.venv` + `uv.lock`.
-Run (with `OPENAI_API_KEY` + `TAVILY_API_KEY` in `agent/.env`): `cd agent && uv run python -c "from agent import build_agent; build_agent(); print('OK')"`
-Expected: prints `[AGENT] Deep Research Agent created…` then `OK` (no import/build errors).
+Run (with ONLY `OPENAI_API_KEY` in `agent/.env` — no Tavily): `cd agent && uv run python -c "from agent import build_agent; build_agent(); print('OK')"`
+Expected: prints `[AGENT] … research: disabled` then `OK` — i.e. the agent builds cleanly WITHOUT `TAVILY_API_KEY` (that's the optional-Tavily requirement). Setting `TAVILY_API_KEY` should flip it to `research: enabled`.
 
 - [ ] **Step 7: Health check**
 
@@ -110,9 +116,11 @@ git commit -m "feat(agent): scaffold Python deepagents deep-research service (AG
 ```
 # KiteBot deep-research agent (agent/) — served over AG-UI on SERVER_PORT.
 # The channel host / self-hosted bot points AGENT_URL at http://localhost:8123/
+# Only OPENAI_API_KEY is required; the agent chats + generates UI components without Tavily.
 OPENAI_API_KEY=sk-...
-# Web research (required). Get one at https://tavily.com
-TAVILY_API_KEY=tvly-...
+# OPTIONAL — web research. Without it the agent still works (chat + UI components,
+# answers from its own knowledge); with it, live web research turns on. https://tavily.com
+# TAVILY_API_KEY=tvly-...
 # OpenAI model (defaults to gpt-5.5, matching the rest of OpenTag).
 # OPENAI_MODEL=gpt-5.5
 # Server bind (defaults 0.0.0.0:8123).
@@ -161,21 +169,43 @@ def test_do_internet_search_swallows_errors(monkeypatch):
 Run: `cd agent && uv run pytest tests/test_tools.py -v`
 Expected: PASS. (These pin the ported `_do_internet_search` behavior: 3000-char truncation, missing-key raise, error-swallow. If the import path fails, adjust to `import tools` and add `[tool.pytest.ini_options] pythonpath = ["."]` to `pyproject.toml`.)
 
-- [ ] **Step 4: Write `agent/tests/test_health.py`**
+- [ ] **Step 4: Write `agent/tests/test_health.py` (incl. the optional-Tavily guarantee)**
 
 ```python
 from fastapi.testclient import TestClient
 
 
 def test_health_ok(monkeypatch):
+    # Only OPENAI_API_KEY set — TAVILY intentionally absent (it's optional).
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     import main
     client = TestClient(main.app)
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+
+def test_build_agent_without_tavily(monkeypatch):
+    # The core requirement: the agent builds with OPENAI_API_KEY alone (no Tavily),
+    # and the research web tool is NOT loaded in that case.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    import importlib, agent as agent_mod
+    importlib.reload(agent_mod)
+    graph = agent_mod.build_agent()  # must NOT raise
+    assert graph is not None
+
+
+def test_build_agent_requires_openai(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    import importlib, agent as agent_mod, pytest
+    importlib.reload(agent_mod)
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        agent_mod.build_agent()
 ```
+
+RED-GREEN: `test_build_agent_without_tavily` fails against the un-edited showcase code (which raises on missing `TAVILY_API_KEY`) and passes once Task 1 Step 3's optional-Tavily change lands — it is the executable proof of the optional-Tavily requirement.
 
 - [ ] **Step 5: Run it**
 
@@ -193,18 +223,20 @@ git commit -m "test(agent): env example + pytest for research tool and health en
 
 ## Task 3: Standalone AG-UI smoke (agent answers over the AGENT_URL contract)
 
-**Files:** none (verification only). Requires real `OPENAI_API_KEY` + `TAVILY_API_KEY`.
+**Files:** none (verification only). Requires only `OPENAI_API_KEY` for the baseline; `TAVILY_API_KEY` optional for the research variant.
 
-- [ ] **Step 1: Boot the agent**
+- [ ] **Step 1: Boot the agent (baseline: no Tavily)**
 
-Run: `cd agent && uv run uvicorn main:app --port 8123`
+Run (only `OPENAI_API_KEY` set): `cd agent && uv run uvicorn main:app --port 8123`
 
-- [ ] **Step 2: POST an AG-UI run and confirm a research turn**
+- [ ] **Step 2: POST an AG-UI run — baseline chat turn (no Tavily)**
 
-Drive one AG-UI run against `POST http://localhost:8123/` (the same endpoint `SanitizingHttpAgent`/`AGENT_URL` uses). Use the AG-UI run payload shape (a `threadId`, `runId`, and `messages: [{role:"user", content:"Research the current state of AG-UI"}]`). Confirm the SSE stream emits: a `write_todos` (plan), one or more `research` tool calls, and a final assistant message synthesizing a brief. (If constructing the raw payload is fiddly, use `@ag-ui/client`'s `HttpAgent` from a tiny node script pointed at `http://localhost:8123/` — mirrors exactly what the channel host does.)
-Expected: a plan forms, research runs, a synthesized report returns. This proves the agent satisfies the `AGENT_URL` contract independent of Slack/Intelligence.
+Drive one AG-UI run against `POST http://localhost:8123/` (the endpoint `SanitizingHttpAgent`/`AGENT_URL` uses) with `messages: [{role:"user", content:"Give me a two-point summary of what AG-UI is"}]`. Easiest: a tiny node script using `@ag-ui/client`'s `HttpAgent` pointed at `http://localhost:8123/` — mirrors the channel host exactly.
+Expected: the agent responds with a synthesized answer (from its own knowledge; research disabled) — **proving chat works over the `AGENT_URL` contract with `OPENAI_API_KEY` alone.**
 
-- [ ] **Step 3: Record the result** in the PR notes (no commit).
+- [ ] **Step 3: (optional) research variant** — set `TAVILY_API_KEY`, restart, send "Research the current state of AG-UI"; confirm the stream now also emits `write_todos` + `research` tool calls before the synthesized brief.
+
+- [ ] **Step 4: Record the result** in the PR notes (no commit).
 
 ---
 
@@ -212,9 +244,9 @@ Expected: a plan forms, research runs, a synthesized report returns. This proves
 
 **Files:** none (investigation). This gates Task 5.
 
-- [ ] **Step 1: Point the channel host at the Python agent**
+- [ ] **Step 1: Point the channel host at the Python agent (no Tavily needed)**
 
-Set `AGENT_URL=http://localhost:8123/` in the root `.env`. Run `agent` (:8123) + the bot (`pnpm dev` self-hosted, or `pnpm channel` if live Intelligence creds are available). @mention KiteBot: `research the AG-UI protocol and summarize`.
+Set `AGENT_URL=http://localhost:8123/` in the root `.env`. Run `agent` (:8123, `OPENAI_API_KEY` only — Tavily off) + the bot (`pnpm dev` self-hosted, or `pnpm channel` if live Intelligence creds are available). @mention KiteBot with a prompt that should yield a card, e.g. `summarize these three options as a table` — the bar is **chat + UI-component generation**, which must work without Tavily.
 
 - [ ] **Step 2: Observe tool invocation**
 
@@ -285,11 +317,11 @@ git commit -m "feat(agent): optional Notion/Linear MCP internal research sources
 
 **Files:** `.env.example`, `package.json`, `README.md`, `setup.md`.
 
-- [ ] **Step 1: Root `.env.example`** — add a "Deep-research agent (agent/)" note: `TAVILY_API_KEY`, `OPENAI_MODEL` already documented, and that `AGENT_URL` should point at `http://localhost:8123/` when using the Python deep agent (vs the TS `runtime.ts`).
+- [ ] **Step 1: Root `.env.example`** — add a "Deep-research agent (agent/)" note: `OPENAI_MODEL` already documented; add an **optional** `TAVILY_API_KEY` (commented) with a note that web research is off without it but chat + UI generation still work; and that `AGENT_URL` should point at `http://localhost:8123/` when using the Python deep agent (vs the TS `runtime.ts`).
 
 - [ ] **Step 2: `package.json`** — add `"agent": "cd agent && uv run uvicorn main:app --port ${AGENT_PORT:-8123}"` (a convenience wrapper; document that it needs `uv`).
 
-- [ ] **Step 3: `README.md` + `setup.md`** — add a "Deep research (LangGraph deep agent)" section: what it is (deepagents planner + web research), how to run it (`uv sync` + `pnpm agent`), the `TAVILY_API_KEY` requirement, and that it's an alternative brain to `runtime.ts` — set `AGENT_URL` to `:8123`. Note the now-three-process local setup (agent + bot + Intelligence).
+- [ ] **Step 3: `README.md` + `setup.md`** — add a "Deep research (LangGraph deep agent)" section: what it is (deepagents planner + optional web research), how to run it (`uv sync` + `pnpm agent`), that only `OPENAI_API_KEY` is required and `TAVILY_API_KEY` is **optional** (enables web research; chat + UI generation work without it), and that it's an alternative brain to `runtime.ts` — set `AGENT_URL` to `:8123`. Note the now-three-process local setup (agent + bot + Intelligence).
 
 - [ ] **Step 4: Commit**
 
@@ -305,7 +337,7 @@ git commit -m "docs: document the deep-research agent (agent/) run + env"
 - [ ] **Step 1:** `cd agent && uv run pytest tests/ -v` → all pass.
 - [ ] **Step 2:** `cd agent && uv run uvicorn main:app --port 8123` + `curl localhost:8123/health` → ok.
 - [ ] **Step 3:** Phase-1 TS gates unaffected: `pnpm check-types` + `pnpm test` → green.
-- [ ] **Step 4 (needs creds):** end-to-end — `AGENT_URL`→`:8123`, run the agent + KiteBot, `@mention KiteBot research <topic>` → a synthesized, sourced brief returns in the channel (as cards or markdown per Task 4).
+- [ ] **Step 4 (needs live Intelligence creds):** end-to-end — `AGENT_URL`→`:8123`, run the agent (`OPENAI_API_KEY` only) + KiteBot. **Baseline pass:** an @mention yields a chat reply and a generated UI component (card) — chat + UI generation with no Tavily. **Bonus:** with `TAVILY_API_KEY` set, `@mention KiteBot research <topic>` returns a synthesized, sourced brief (cards or markdown per Task 4).
 
 ---
 
