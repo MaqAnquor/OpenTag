@@ -136,7 +136,8 @@ To run it:
 
 ```bash
 cd agent && uv sync   # requires uv: https://docs.astral.sh/uv/
-pnpm agent            # serves the deep agent over AG-UI on :8123
+pnpm agent            # cd agent && uv run python main.py — serves over AG-UI on :8123
+                       # (port from SERVER_PORT/PORT env, default 8123)
 ```
 
 Then point the bot at it instead of `runtime.ts` by setting in `.env`:

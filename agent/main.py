@@ -11,16 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 from copilotkit import LangGraphAGUIAgent
-from copilotkit.langgraph import copilotkit_customize_config
 
 from agent import build_agent
 
 load_dotenv()
 
 app = FastAPI(
-    title="Deep Research Assistant",
+    title="KiteBot Deep Research Agent",
     description="A research assistant powered by Deep Agents and CopilotKit",
-    version="1.0.0",
+    version="0.1.0",
 )
 
 # Enable CORS for frontend communication
@@ -28,7 +27,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -37,28 +36,21 @@ app.add_middleware(
 @app.get("/health")
 def health():
     """Health check endpoint for monitoring and Railway deployments"""
-    return {"status": "ok", "service": "kitebot-research-agent", "version": "1.0.0"}
+    return {"status": "ok", "service": "kitebot-research-agent", "version": "0.1.0"}
 
 
 # Build and register the Deep Research Agent
 try:
     agent_graph = build_agent()
 
-    # Configure which tool calls to emit to the frontend
-    # Only emit main agent tools - suppress internal tools (internet_search from research subagent)
-    # This prevents subagent tool calls from appearing as JSON noise in the chat
-    agui_config = copilotkit_customize_config(
-        emit_tool_calls=[
-            "research",
-            "write_todos",
-            "write_file",
-            "read_file",
-            "edit_file",
-        ]
-    )
-
-    # Add recursion limit for complex research tasks (6+ research calls + file operations)
-    agui_config["recursion_limit"] = 100
+    # Note: we intentionally do NOT pass an emit_tool_calls allowlist here.
+    # KiteBot's channel bridge forwards generative-UI + HITL tools (issue_card,
+    # render_chart, render_table, show_links, confirm_write, ...) that must be
+    # emitted to the frontend for cards to render and the write-gate to surface.
+    # An allowlist would filter those out. The recursion limit for complex
+    # research tasks (6+ research calls + file operations) is already applied
+    # to the graph itself via `.with_config({"recursion_limit": 100})` in
+    # agent.py, so no additional AG-UI config is needed here.
 
     # Add AG-UI endpoint at root path for CopilotKit frontend
     add_langgraph_fastapi_endpoint(
@@ -67,7 +59,6 @@ try:
             name="kitebot_research",
             description="KiteBot deep research assistant — plans, searches, and synthesizes cited briefs",
             graph=agent_graph,
-            config=agui_config,
         ),
         path="/",
     )
@@ -83,14 +74,16 @@ def main():
     import uvicorn
 
     host = os.getenv("SERVER_HOST", "0.0.0.0")
-    port = int(os.getenv("SERVER_PORT", "8123"))
+    # Honor Railway's injected $PORT first, falling back to SERVER_PORT for local dev
+    port = int(os.getenv("PORT") or os.getenv("SERVER_PORT", "8123"))
+    reload = os.getenv("AGENT_RELOAD", "").lower() in ("1", "true", "yes")
 
     print(f"[SERVER] Starting on {host}:{port}")
     uvicorn.run(
         "main:app",
         host=host,
         port=port,
-        reload=True,
+        reload=reload,
         log_level="info",
     )
 

@@ -112,18 +112,32 @@ const MCP_CONNECT_TIMEOUT_MS = 8000;
  * Connect one MCP client without ever taking the run down with it. A server
  * that's misconfigured (bad key), down (sidecar not running), or hanging must
  * NOT abort the turn — the agent should keep working with whatever else is
- * available. We race the connect against a timeout and swallow a late failure
- * so it can't surface as an unhandled rejection after we've moved on.
+ * available. We race the connect against a timeout.
+ *
+ * `connecting` can settle after we've already given up on it: a late
+ * rejection must not surface as an unhandled rejection, and a late
+ * *success* hands back a live `MCPClient` that nothing else will ever
+ * close — left alone that's a leaked MCP connection every time a server is
+ * merely slow instead of down. So once the timeout wins the race, we attach
+ * a follow-up that closes whatever client `connecting` eventually produces;
+ * closing is itself best-effort (swallow errors from `close()`) since there's
+ * no one left to hand a close failure to.
  */
 async function connectMcp(transport: McpHttpTransport) {
   const connecting = createMCPClient({ transport });
-  connecting.catch(() => {}); // late reject (post-timeout) must not crash the process
+  let timedOut = false;
+  connecting.then(
+    (client) => {
+      if (timedOut) void client.close().catch(() => {}); // leaked otherwise: nothing else closes it
+    },
+    () => {}, // late reject (post-timeout) must not crash the process
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`timed out after ${MCP_CONNECT_TIMEOUT_MS}ms`)),
-      MCP_CONNECT_TIMEOUT_MS,
-    );
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`timed out after ${MCP_CONNECT_TIMEOUT_MS}ms`));
+    }, MCP_CONNECT_TIMEOUT_MS);
     timer.unref?.(); // don't keep the process alive on the timer alone
   });
   try {

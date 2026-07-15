@@ -95,7 +95,6 @@ def build_agent():
     model_name = os.environ.get("OPENAI_MODEL", "gpt-5.5")
     llm = ChatOpenAI(
         model=model_name,
-        temperature=0.7,
         api_key=api_key,
     )
 

@@ -73,6 +73,13 @@ export function clamp(
   if (rows.length > MAX_DATA_ROWS) {
     notes.push(`only the first ${MAX_DATA_ROWS} of ${rows.length} rows shown`);
   }
+  const extraCellRows = dataRows.filter((r) => r.length > cols.length).length;
+  if (extraCellRows > 0) {
+    notes.push(
+      `${extraCellRows} row(s) had extra cells beyond the ${cols.length} ` +
+        "columns; extras were dropped",
+    );
+  }
   return { cols, dataRows, notes };
 }
 

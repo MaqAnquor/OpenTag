@@ -74,28 +74,8 @@ export const renderChartTool = defineBotTool({
     "inline in the conversation.",
   parameters: schema,
   async handler({ title, chartSpec }, ctx) {
-    // chartSpec is an object; tolerate a stringified one too (some models
-    // still hand back a JSON string).
-    let spec: Record<string, unknown>;
-    if (typeof chartSpec === "string") {
-      try {
-        spec = JSON.parse(chartSpec) as Record<string, unknown>;
-      } catch (e) {
-        return `Chart render failed: chartSpec must be a Chart.js config object; got an unparseable string: ${(e as Error).message}`;
-      }
-    } else {
-      spec = chartSpec as Record<string, unknown>;
-    }
     try {
-      const png = await renderChart(spec);
-      // Post the caption as a HEADER first, then the image. A file upload's
-      // channel message lands a beat after `postFile` resolves, so posting the
-      // caption first keeps a stable caption → image order (posting it after
-      // would let the image's message overtake it). Also doubles as a
-      // render-tool demo of a JSX <Context> card.
-      await ctx.thread.post(
-        <Context>{`📊  *${title ?? "Chart"}* — chart below.`}</Context>,
-      );
+      const png = await renderChart(chartSpec);
       const res = await ctx.thread.postFile({
         bytes: png,
         filename: `${slug(title ?? "chart")}.png`,
@@ -105,6 +85,13 @@ export const renderChartTool = defineBotTool({
       if (!res.ok) {
         return `Chart render failed: ${res.error ?? "upload was rejected"}`;
       }
+      // Post the Context caption only after the upload succeeds, so a failed
+      // upload never leaves a caption in the thread promising an image that
+      // never lands. Also doubles as a render-tool demo of a JSX <Context>
+      // card.
+      await ctx.thread.post(
+        <Context>{`📊  *${title ?? "Chart"}* — chart below.`}</Context>,
+      );
       return "Rendered and posted the chart image to the thread.";
     } catch (e) {
       return `Chart render failed: ${(e as Error).message}`;

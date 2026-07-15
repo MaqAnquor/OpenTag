@@ -70,8 +70,9 @@ It's built on:
 ### From the monorepo
 
 If you're working inside the [CopilotKit monorepo](https://github.com/CopilotKit/CopilotKit),
-this code runs there as `examples/slack`, building the `@copilotkit/channels*` adapters from
-source:
+this code runs there as `examples/slack`, whose `package.json` name is `slack-example` (this
+standalone repo's `package.json` name is `opentag` — the `--filter` below only resolves inside
+the monorepo), building the `@copilotkit/channels*` adapters from source:
 
 ```bash
 pnpm install                              # repo root
@@ -122,7 +123,7 @@ Copy `agent/.env.example` to `agent/.env` and fill it in:
 **Run it:**
 
 ```bash
-pnpm agent   # cd agent && uv run uvicorn main:app --port 8123
+pnpm agent   # cd agent && uv run python main.py (port from SERVER_PORT/PORT env, default 8123)
 ```
 
 Then point the bot at it instead of `runtime.ts` by setting in the root `.env`:

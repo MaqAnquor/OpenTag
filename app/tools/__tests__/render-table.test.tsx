@@ -167,4 +167,36 @@ describe("clamp", () => {
     const { notes } = clamp(COLS, ROWS);
     expect(notes).toEqual([]);
   });
+
+  it("reports rows with more cells than declared columns instead of silently dropping them", () => {
+    // COLS has 2 columns; this row carries a 3rd cell that has nowhere to go.
+    const { notes } = clamp(COLS, [["CPK-1", "High", "extra-cell"]]);
+    expect(notes).toEqual([
+      "1 row(s) had extra cells beyond the 2 columns; extras were dropped",
+    ]);
+  });
+});
+
+describe("render_table tool — extra cells per row", () => {
+  it("surfaces a note (to the agent and the thread) when a row has more cells than columns", async () => {
+    const { posts, ctx } = fakeThread();
+    const rowsWithExtra = [
+      ["CPK-1", "High", "extra-1"],
+      ["CPK-2", "Low"],
+    ];
+    const out = (await renderTableTool.handler(
+      { title: "Open issues", columns: COLS, rows: rowsWithExtra },
+      ctx,
+    )) as string;
+    // Reported back to the agent in the returned status string...
+    expect(out).toContain(
+      "1 row(s) had extra cells beyond the 2 columns; extras were dropped",
+    );
+    // ...and also posted into the thread so the user sees it, not just the agent.
+    const { blocks } = renderSlackMessage(renderToIR(posts[0] as never));
+    const text = JSON.stringify(blocks);
+    expect(text).toContain(
+      "1 row(s) had extra cells beyond the 2 columns; extras were dropped",
+    );
+  });
 });

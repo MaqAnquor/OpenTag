@@ -2,9 +2,10 @@
  * Covers the `render_chart` and `render_diagram` tools (render-chart.tsx /
  * render-diagram.tsx) — the agent-facing tools that render a Chart.js config
  * or Mermaid source to a PNG and post it via `thread.postFile`, plus a small
- * JSX caption card posted first via `thread.post`. The `issue_card` /
- * `issue_list` / `page_list` render-tool wrappers are covered separately in
- * render-tools.test.tsx.
+ * JSX caption card posted via `thread.post` only after the upload succeeds
+ * (so a failed upload never leaves an orphaned caption in the thread). The
+ * `issue_card` / `issue_list` / `page_list` render-tool wrappers are covered
+ * separately in render-tools.test.tsx.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderToIR } from "@copilotkit/channels-ui";
@@ -51,7 +52,7 @@ beforeEach(() => {
 
 describe("render_chart tool", () => {
   it("renders a config object and posts the PNG", async () => {
-    const { ctx, postFile, posts } = makeCtx();
+    const { ctx, postFile, posts, thread } = makeCtx();
     const out = (await renderChartTool.handler(
       {
         title: "Revenue Q2",
@@ -73,11 +74,14 @@ describe("render_chart tool", () => {
       }),
     );
     expect(out).toBe("Rendered and posted the chart image to the thread.");
-    // The caption card was posted before the upload.
+    // The caption card was posted after the upload succeeded.
     expect(posts).toHaveLength(1);
     const { blocks } = renderSlackMessage(renderToIR(posts[0] as never));
     expect(JSON.stringify(blocks)).toContain("📊");
     expect(JSON.stringify(blocks)).toContain("Revenue Q2");
+    expect(postFile.mock.invocationCallOrder[0]!).toBeLessThan(
+      thread.post.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("returns ok:false (not a throw) when rendering fails", async () => {
@@ -99,39 +103,6 @@ describe("render_chart tool", () => {
     expect(postFile).not.toHaveBeenCalled();
   });
 
-  it("accepts a stringified chartSpec and parses it before rendering", async () => {
-    const { ctx, postFile } = makeCtx();
-    const out = (await renderChartTool.handler(
-      {
-        title: "Stringified",
-        chartSpec: JSON.stringify({
-          type: "line",
-          data: { labels: ["a", "b"], datasets: [{ data: [1, 2] }] },
-        }) as never,
-      },
-      ctx,
-    )) as string;
-    expect(renderChart).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "line" }),
-    );
-    expect(postFile).toHaveBeenCalledWith(
-      expect.objectContaining({ bytes: CHART_PNG }),
-    );
-    expect(out).toBe("Rendered and posted the chart image to the thread.");
-  });
-
-  it("returns an error (does not throw or render) when the stringified chartSpec is unparseable", async () => {
-    const { ctx, postFile } = makeCtx();
-    const out = (await renderChartTool.handler(
-      { title: "Broken", chartSpec: "{not json" as never },
-      ctx,
-    )) as string;
-    expect(out).toContain("Chart render failed");
-    expect(out).toContain("unparseable string");
-    expect(renderChart).not.toHaveBeenCalled();
-    expect(postFile).not.toHaveBeenCalled();
-  });
-
   it("tells the agent when postFile rejects the upload (res.ok === false)", async () => {
     const { ctx } = makeCtx({
       postFileResult: { ok: false, error: "file too large" },
@@ -149,11 +120,29 @@ describe("render_chart tool", () => {
     expect(out).toContain("Chart render failed");
     expect(out).toContain("file too large");
   });
+
+  it("does not post the caption when postFile rejects the upload", async () => {
+    const { ctx, thread } = makeCtx({
+      postFileResult: { ok: false, error: "file too large" },
+    });
+    await renderChartTool.handler(
+      {
+        title: "Too Big",
+        chartSpec: {
+          type: "bar",
+          data: { labels: ["a"], datasets: [{ data: [1] }] },
+        },
+      },
+      ctx,
+    );
+    // No orphaned caption promising an image that never landed.
+    expect(thread.post).not.toHaveBeenCalled();
+  });
 });
 
 describe("render_diagram tool", () => {
   it("renders Mermaid and posts the PNG", async () => {
-    const { ctx, postFile, posts } = makeCtx();
+    const { ctx, postFile, posts, thread } = makeCtx();
     const out = (await renderDiagramTool.handler(
       { title: "Flow", mermaid: "flowchart TD\n A-->B" },
       ctx,
@@ -163,10 +152,14 @@ describe("render_diagram tool", () => {
       expect.objectContaining({ bytes: DIAGRAM_PNG, filename: "flow.png" }),
     );
     expect(out).toBe("Rendered and posted the diagram image to the thread.");
+    // The caption card was posted after the upload succeeded.
     expect(posts).toHaveLength(1);
     const { blocks } = renderSlackMessage(renderToIR(posts[0] as never));
     expect(JSON.stringify(blocks)).toContain("📐");
     expect(JSON.stringify(blocks)).toContain("Flow");
+    expect(postFile.mock.invocationCallOrder[0]!).toBeLessThan(
+      thread.post.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("surfaces a render error for the agent to repair", async () => {
@@ -179,5 +172,29 @@ describe("render_diagram tool", () => {
     expect(out).toContain("Diagram render failed");
     expect(out).toContain("Parse error");
     expect(postFile).not.toHaveBeenCalled();
+  });
+
+  it("tells the agent when postFile rejects the upload (res.ok === false)", async () => {
+    const { ctx } = makeCtx({
+      postFileResult: { ok: false, error: "file too large" },
+    });
+    const out = (await renderDiagramTool.handler(
+      { title: "Too Big", mermaid: "flowchart TD\n A-->B" },
+      ctx,
+    )) as string;
+    expect(out).toContain("Diagram render failed");
+    expect(out).toContain("file too large");
+  });
+
+  it("does not post the caption when postFile rejects the upload", async () => {
+    const { ctx, thread } = makeCtx({
+      postFileResult: { ok: false, error: "file too large" },
+    });
+    await renderDiagramTool.handler(
+      { title: "Too Big", mermaid: "flowchart TD\n A-->B" },
+      ctx,
+    );
+    // No orphaned caption promising an image that never landed.
+    expect(thread.post).not.toHaveBeenCalled();
   });
 });

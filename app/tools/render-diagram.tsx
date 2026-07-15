@@ -44,12 +44,6 @@ export const renderDiagramTool = defineBotTool({
   async handler({ title, mermaid }, ctx) {
     try {
       const png = await renderDiagram(mermaid);
-      // Post the caption as a HEADER first, then the image (see render-chart:
-      // a file upload's message lands a beat after `postFile` resolves, so
-      // caption-first keeps a stable caption → image order).
-      await ctx.thread.post(
-        <Context>{`📐  *${title ?? "Diagram"}* — diagram below.`}</Context>,
-      );
       const res = await ctx.thread.postFile({
         bytes: png,
         filename: `${slug(title ?? "diagram")}.png`,
@@ -59,6 +53,12 @@ export const renderDiagramTool = defineBotTool({
       if (!res.ok) {
         return `Diagram render failed: ${res.error ?? "upload was rejected"}. Fix the Mermaid syntax and retry.`;
       }
+      // Post the Context caption only after the upload succeeds, so a failed
+      // upload never leaves a caption in the thread promising an image that
+      // never lands (see render-chart.tsx).
+      await ctx.thread.post(
+        <Context>{`📐  *${title ?? "Diagram"}* — diagram below.`}</Context>,
+      );
       return "Rendered and posted the diagram image to the thread.";
     } catch (e) {
       // Surface the Mermaid parse error so the agent can repair the source.

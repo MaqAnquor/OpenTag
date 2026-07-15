@@ -65,23 +65,6 @@ def _do_internet_search(query: str, max_results: int = 5) -> list[dict[str, Any]
 
 
 @tool
-def internet_search(query: str, max_results: int = 5) -> list[dict[str, Any]]:
-    """Search the web and return results with content.
-
-    Use this tool to find relevant web pages about a topic.
-    Returns search results including the page content for analysis.
-
-    Args:
-        query: The search query string
-        max_results: Maximum number of results to return (default: 5)
-
-    Returns:
-        List of dicts with url, title, and content for each result
-    """
-    return _do_internet_search(query, max_results)
-
-
-@tool
 def research(query: str) -> dict:
     """
     Research a topic using web search. Returns structured data with sources.
@@ -130,7 +113,6 @@ def research(query: str) -> dict:
         model_name = os.environ.get("OPENAI_MODEL", "gpt-5.5")
         llm = ChatOpenAI(
             model=model_name,
-            temperature=0.7,
             api_key=os.environ.get("OPENAI_API_KEY"),
         )
 
