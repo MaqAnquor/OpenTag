@@ -119,6 +119,38 @@ OpenTag is deliberately small and hackable:
 The full architecture, the file-by-file map, and every integration live in
 **[setup.md](./setup.md)**.
 
+## Deep research (LangGraph deep agent)
+
+`agent/` is an alternative agent backend to `runtime.ts` — a Python
+[`deepagents`](https://github.com/langchain-ai/deepagents) (LangGraph) planner with a virtual
+filesystem and OPTIONAL Tavily web research, served over AG-UI on `:8123`. Instead of a single
+system-prompted LLM call, it plans with `write_todos`, reads/writes its own virtual files, and
+(when configured) researches the web before synthesizing an answer — while still calling
+KiteBot's forwarded generative-UI tools like the TS runtime does.
+
+Only `OPENAI_API_KEY` is required. `TAVILY_API_KEY` is **optional** — without it, chat and UI
+generation still work (the agent answers from its own knowledge); with it, live web research
+turns on.
+
+To run it:
+
+```bash
+cd agent && uv sync   # requires uv: https://docs.astral.sh/uv/
+pnpm agent            # serves the deep agent over AG-UI on :8123
+```
+
+Then point the bot at it instead of `runtime.ts` by setting in `.env`:
+
+```bash
+AGENT_URL=http://localhost:8123/
+```
+
+With `agent/` in the mix, the local setup is now three pieces: the deep-research agent
+(`pnpm agent`, `:8123`), the bot (`pnpm channel` or `pnpm dev`), and whichever brain
+`AGENT_URL` points at — the Python deep agent above, or the TS `runtime.ts` (`pnpm runtime`,
+`:8200`) as before. `agent` and `runtime` are alternative brains for the same bot; run one or
+the other depending on what `AGENT_URL` targets.
+
 ## Don't want to host it yourself?
 
 Self-hosting means you run and scale the runtime, persistence, and inspection tooling yourself.

@@ -9,6 +9,7 @@
     "dev": "tsx watch app/index.ts",
     "start": "tsx app/index.ts",
     "channel": "tsx app/managed.ts",
+    "agent": "cd agent && uv run uvicorn main:app --port ${AGENT_PORT:-8123}",
     "runtime": "tsx runtime.ts",
     "notion-mcp": "tsx scripts/start-notion-mcp.ts",
     "check-types": "tsc --noEmit -p tsconfig.json",

@@ -7,6 +7,7 @@ slash commands, tests, and how the pieces fit together.
 
 - [How it fits together](#how-it-fits-together)
 - [Running it](#running-it) — monorepo or standalone, self-hosted or Intelligence Gateway
+- [Deep research (LangGraph deep agent)](#deep-research-langgraph-deep-agent)
 - [Intelligence channel mode](#intelligence-channel-mode)
 - [1. Create a Slack app](#1-create-a-slack-app)
 - [2. Environment variables](#2-environment-variables)
@@ -92,6 +93,48 @@ npm run dev            # terminal 3 — KiteBot, self-hosted (holds the Slack to
 ```
 
 The chart/diagram renderers need a Chromium binary: `npx playwright install chromium`.
+
+## Deep research (LangGraph deep agent)
+
+[`agent/`](./agent) is an alternative agent backend to `runtime.ts`: a Python
+[`deepagents`](https://github.com/langchain-ai/deepagents) (LangGraph) planner with a virtual
+filesystem and OPTIONAL Tavily web research, served over AG-UI on `:8123`. Instead of
+`runtime.ts`'s single system-prompted `BuiltInAgent` call, it plans with `write_todos`,
+reads/writes its own virtual files, and — when configured — researches the web before
+synthesizing an answer, all while still calling KiteBot's forwarded generative-UI tools the same
+way the TS runtime does.
+
+**Setup** — requires [`uv`](https://docs.astral.sh/uv/) and Python 3.12:
+
+```bash
+cd agent && uv sync
+```
+
+Copy `agent/.env.example` to `agent/.env` and fill it in:
+
+| Variable | What it's for |
+| --- | --- |
+| `OPENAI_API_KEY` | **Required** — the model. |
+| `TAVILY_API_KEY` | **Optional** — turns on live web research. Without it the agent still chats and generates UI components, answering from its own knowledge. |
+| `OPENAI_MODEL` | Defaults to `gpt-5.5`, matching the rest of OpenTag. |
+| `SERVER_HOST` / `SERVER_PORT` | Defaults to `0.0.0.0:8123`. |
+
+**Run it:**
+
+```bash
+pnpm agent   # cd agent && uv run uvicorn main:app --port 8123
+```
+
+Then point the bot at it instead of `runtime.ts` by setting in the root `.env`:
+
+```bash
+AGENT_URL=http://localhost:8123/
+```
+
+With the deep agent in the mix, a local setup is three processes: `pnpm agent` (the Python
+deep-research brain, `:8123`), the bot (`pnpm channel` or `pnpm dev`), and — if you're using
+`runtime.ts` instead — `pnpm runtime` (`:8200`). `agent` and `runtime` are two alternative brains
+for the same bot; run whichever one `AGENT_URL` points at.
 
 ## Intelligence channel mode
 
