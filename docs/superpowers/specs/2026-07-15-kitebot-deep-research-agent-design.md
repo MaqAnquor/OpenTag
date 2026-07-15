@@ -75,9 +75,8 @@ building the full agent.
 
 ## Env & scripts
 
-- New env: `TAVILY_API_KEY` (required for web research), `OPENAI_MODEL` (default `gpt-5.2`
-  per the showcase; reconcile with Phase 1's `gpt-5.5` — pick one default and document),
-  `AGENT_PORT` (default 8123). Reuses `OPENAI_API_KEY`. `AGENT_URL` in the channel host →
+- New env: `TAVILY_API_KEY` (required for web research), `OPENAI_MODEL` (default
+  **`gpt-5.5`**, matching Phase 1), `AGENT_PORT` (default 8123). Reuses `OPENAI_API_KEY`. `AGENT_URL` in the channel host →
   `http://localhost:8123/`. Optional internal sources reuse Phase 1's `LINEAR_API_KEY` /
   `NOTION_*` vars.
 - `agent/.env.example` (or extend the root one) documents the above.
@@ -114,7 +113,5 @@ building the full agent.
 
 1. **Rendering path** — resolved by the first spike (forwarded tools vs markdown fallback);
    no user input needed unless the fallback materially changes the demo.
-2. **Model default** — Phase 1 uses `openai/gpt-5.5`; the deepagents showcase uses `gpt-5.2`.
-   Pick one for consistency (proposed: `gpt-5.5` to match Phase 1). Confirm.
-3. **Internal sources** — ship web-first with Notion/Linear as optional (proposed) vs
-   web-only for the first cut. (Locked: optional internal sources.)
+2. **Model default** — RESOLVED: `gpt-5.5` (matches Phase 1).
+3. **Internal sources** — RESOLVED: web-first with Notion/Linear as optional.
