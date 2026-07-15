@@ -17,6 +17,10 @@ https://github.com/user-attachments/assets/a74fa1cb-add0-463e-a23c-aa09b95d5135
 ▶️ **[Watch the demo](https://github.com/user-attachments/assets/a74fa1cb-add0-463e-a23c-aa09b95d5135)** (~50s) — a KiteBot agent working a Slack thread: it renders a breakdown, a table, and a bar chart inline (**generative UI**) and files a ticket only after an **Approve** gate (**human-in-the-loop**).
 
 > **Two ways to run it:** **host it on your own** with the open-source SDK below — or skip the ops and **[sign up for the managed service →](https://go.copilotkit.ai/opentag-managed-gh)** coming soon from CopilotKit. The managed service will be part of our Enterprise Intelligence platform. You'll be able to use our cloud-hosting or enterprises can host it on their own infra.
+>
+> Note: the **Intelligence Gateway** mode below is part of "host it on your own" — you run that
+> process yourself and bring your own CopilotKit Intelligence project. It's distinct from the
+> fully-hosted **managed service** above, which is still on the waitlist.
 
 ## Quick start
 
@@ -26,9 +30,11 @@ everything you need, no monorepo required.
 You'll run two processes: the **agent backend** (`pnpm runtime`) and **the bot**. For the bot,
 pick one of two modes:
 
-- **Intelligence (managed) — recommended.** `pnpm channel` runs the bot over the CopilotKit
+- **Intelligence Gateway — recommended.** `pnpm channel` runs the bot over the CopilotKit
   Intelligence Realtime Gateway. This process never holds a Slack token — Intelligence owns
-  the Slack edge — so there's less for you to run and secure.
+  the Slack edge — so there's less for you to run and secure. You still run this process
+  yourself and bring your own CopilotKit Intelligence project — it's not the fully-hosted
+  managed service described below.
 - **Self-hosted.** `pnpm dev` (or `pnpm start`) runs the bot locally and talks to Slack (and
   Discord/Telegram/WhatsApp) directly with your own platform tokens.
 
@@ -52,7 +58,7 @@ OpenTag is a thin layer on top of a handful of CopilotKit packages. The `pnpm in
 | Package | When you need it |
 | --- | --- |
 | [`@copilotkit/channels-discord`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-discord) · [`-telegram`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-telegram) · [`-whatsapp`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-whatsapp) | Running on a platform other than Slack — one adapter per platform. |
-| [`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence) | Runs the bot over CopilotKit Intelligence (managed Realtime Gateway) instead of holding platform tokens — see `app/managed.ts`. |
+| [`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence) | Runs the bot over the CopilotKit Intelligence Realtime Gateway instead of holding platform tokens — see `app/managed.ts`. |
 
 **1. Create a Slack app.** At [api.slack.com/apps](https://api.slack.com/apps?new_app=1) →
 *From a manifest* → paste [`slack-app-manifest.yaml`](./slack-app-manifest.yaml). Install it,
@@ -70,7 +76,7 @@ OPENAI_API_KEY=sk-...      # or ANTHROPIC_API_KEY — bring your own model
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
 
-# Intelligence (managed) mode — full list in .env.example:
+# Intelligence Gateway mode — full list in .env.example:
 INTELLIGENCE_GATEWAY_WS_URL=wss://...
 INTELLIGENCE_API_KEY=cpk-...
 INTELLIGENCE_ORG_ID=org_...
@@ -84,7 +90,7 @@ INTELLIGENCE_CHANNEL_ID=channel_...
 pnpm install
 pnpm runtime    # the agent backend, on :8200
 
-pnpm channel    # recommended — the bot over Intelligence (managed)
+pnpm channel    # recommended — the bot over the Intelligence Gateway
 # or
 pnpm dev        # alternative — the bot, self-hosted
 ```

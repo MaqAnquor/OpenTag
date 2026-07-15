@@ -2,11 +2,11 @@
 
 Everything beyond the [quick start](./README.md#quick-start): the full Slack app walkthrough,
 the complete environment reference, running standalone vs. from the monorepo, the Intelligence
-(managed) channel mode, wiring up Linear / Notion / inline charts, the other chat platforms,
+Gateway channel mode, wiring up Linear / Notion / inline charts, the other chat platforms,
 slash commands, tests, and how the pieces fit together.
 
 - [How it fits together](#how-it-fits-together)
-- [Running it](#running-it) — monorepo or standalone, self-hosted or Intelligence-managed
+- [Running it](#running-it) — monorepo or standalone, self-hosted or Intelligence Gateway
 - [Intelligence channel mode](#intelligence-channel-mode)
 - [1. Create a Slack app](#1-create-a-slack-app)
 - [2. Environment variables](#2-environment-variables)
@@ -31,7 +31,7 @@ if you use Notion — a small **Notion MCP sidecar**. KiteBot speaks to the agen
 optional MCP tools — no Python, no LangGraph).
 
 KiteBot runs in one of two modes: **self-hosted** (`pnpm dev` → `app/index.ts`, holds the Slack
-tokens directly) or **Intelligence-managed** (`pnpm channel` → `app/managed.ts`, over the
+tokens directly) or **Intelligence Gateway** (`pnpm channel` → `app/managed.ts`, over the
 CopilotKit Intelligence Realtime Gateway — see [Intelligence channel
 mode](#intelligence-channel-mode)). Both modes talk to the same agent backend
 (`pnpm runtime` → `runtime.ts`) via `AGENT_URL`.
@@ -60,7 +60,7 @@ It's built on:
 - **[`@copilotkit/channels`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels)** — the platform-agnostic bot engine.
 - **[`@copilotkit/channels-slack`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-slack)** / **[`-discord`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-discord)** / **[`-telegram`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-telegram)** / **[`-whatsapp`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-whatsapp)** — the platform adapters.
 - **[`@copilotkit/channels-ui`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-ui)** — a cross-platform JSX vocabulary for rich messages (Block Kit on Slack, Components V2 on Discord, HTML on Telegram).
-- **[`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence)** — runs the same KiteBot over the CopilotKit Intelligence Realtime Gateway (managed mode, no platform tokens in this process).
+- **[`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence)** — runs the same KiteBot over the CopilotKit Intelligence Realtime Gateway (Intelligence Gateway mode, no platform tokens in this process).
 - **[`@copilotkit/runtime`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/runtime)** — the AG-UI agent backend.
 
 ## Running it
@@ -97,12 +97,13 @@ The chart/diagram renderers need a Chromium binary: `npx playwright install chro
 `pnpm channel` (`app/managed.ts`) runs the same KiteBot over the **CopilotKit Intelligence
 Realtime Gateway** instead of a native platform adapter — this process holds **no Slack tokens**;
 Intelligence owns the Slack edge (signed ingress + Connector Outbox egress) and streams render
-frames back over `@copilotkit/channels-intelligence`. It's the managed counterpart to the
-self-hosted `pnpm dev` mode described above.
+frames back over `@copilotkit/channels-intelligence`. It's the Intelligence Gateway counterpart to
+the self-hosted `pnpm dev` mode described above — you still run this process yourself and bring
+your own CopilotKit Intelligence project.
 
 ```bash
 npm run runtime        # terminal 1 — the agent backend on :8200 (same as self-hosted)
-npm run channel        # terminal 2 — the Intelligence-managed KiteBot (tsx app/managed.ts)
+npm run channel        # terminal 2 — the Intelligence Gateway KiteBot (tsx app/managed.ts)
 ```
 
 Configure it with:
