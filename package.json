@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@copilotkit/channels": "^0.1.1",
-    "@notionhq/notion-mcp-server": "^2.2.1",
+    "@notionhq/notion-mcp-server": "^2.4.0",
     "@copilotkit/channels-discord": "^0.0.3",
     "@copilotkit/channels-intelligence": "^0.1.1",
     "@copilotkit/channels-slack": "^0.1.2",

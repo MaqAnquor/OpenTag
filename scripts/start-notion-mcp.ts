@@ -32,14 +32,16 @@ if (!notionToken) {
   process.exit(1);
 }
 
-// Port the sidecar listens on. Must agree with NOTION_MCP_URL in runtime.ts
-// (default http://127.0.0.1:3001/mcp). Validated up front because it's
-// passed as a `--port` arg to a `shell: true` spawn below — an unvalidated
-// value with spaces/shell metacharacters could mangle or inject the command.
-const rawPort = process.env["NOTION_MCP_PORT"];
+// Port the sidecar listens on. Must agree with NOTION_MCP_URL as dialed by
+// runtime.ts (TS backend) AND by the Python agent/ backend on Railway — both
+// default to http://127.0.0.1:3001/mcp. Validated up front because it's passed
+// as a `--port` arg to a `shell: true` spawn below — an unvalidated value with
+// spaces/shell metacharacters could mangle or inject the command. An empty
+// string (a bare `NOTION_MCP_PORT=` in .env) is treated as unset → default.
+const rawPort = process.env["NOTION_MCP_PORT"] || undefined;
 if (rawPort !== undefined && !/^\d+$/.test(rawPort)) {
   console.error(
-    `[notion-mcp] NOTION_MCP_PORT must be an integer between 1 and 65535, got: ${JSON.stringify(rawPort)}`,
+    `[notion-mcp] NOTION_MCP_PORT must be a positive integer (1–65535), got: ${JSON.stringify(rawPort)}`,
   );
   process.exit(1);
 }
@@ -58,7 +60,7 @@ const port = String(portNumber);
 // over Railway's (IPv6) private network — without it the server binds 127.0.0.1
 // and the agent's cross-container connection is refused. Validated because it's
 // passed to a `shell: true` spawn below.
-const rawHost = process.env["NOTION_MCP_HOST"];
+const rawHost = process.env["NOTION_MCP_HOST"] || undefined;
 // Must start with an alphanumeric or ":" (for IPv6 like "::") — this both keeps
 // it shell-inert and prevents a leading-"-" value being consumed as a flag by
 // the child CLI rather than as the host.
@@ -86,10 +88,12 @@ const openApiHeaders = JSON.stringify({
   ...(forcedVersion ? { "Notion-Version": forcedVersion } : {}),
 });
 
-// OPENAPI_MCP_HEADERS is the sole Notion auth source. NOTION_TOKEN must be
-// absent from the child env (dotenv loaded it into process.env, so delete it
-// after the spread) — if present, the server would build its own auth header
-// from it and ignore OPENAPI_MCP_HEADERS.
+// OPENAPI_MCP_HEADERS is our Notion auth source. It takes precedence anyway
+// (the server's parseHeadersFromEnv checks OPENAPI_MCP_HEADERS before falling
+// back to NOTION_TOKEN), so deleting NOTION_TOKEN from the child env is
+// defensive cleanup: it removes the unused fallback and suppresses the server's
+// NOTION_TOKEN startup diagnostic (a /v1/users/me probe). dotenv loaded it into
+// process.env, so delete it after the spread.
 const childEnv: NodeJS.ProcessEnv = {
   ...process.env,
   OPENAPI_MCP_HEADERS: openApiHeaders,
@@ -123,12 +127,15 @@ const child = spawn(
 // clean, operator/platform-initiated stop from an abnormal death.
 let shuttingDown = false;
 child.on("exit", (code, signal) => {
+  // A shutdown WE forwarded (SIGINT/SIGTERM) is deliberate — report success
+  // regardless of how the child surfaced it. Checked FIRST because under
+  // shell:true the wrapper may report the forwarded signal as a numeric
+  // 128+signum code (e.g. 143) rather than code===null; either way a clean
+  // stop must not trip the service's ON_FAILURE restart policy.
+  if (shuttingDown) process.exit(0);
   // Normal exit: propagate the child's own status.
   if (code !== null) process.exit(code);
-  // Died by a signal we forwarded (SIGINT/SIGTERM) — a deliberate shutdown, so
-  // report success and don't trip the service's ON_FAILURE restart policy.
-  if (shuttingDown) process.exit(0);
-  // Died by a signal we did NOT initiate (SIGKILL/OOM/SIGSEGV) — a real crash;
+  // Signal death we did NOT initiate (SIGKILL/OOM/SIGSEGV) — a real crash;
   // exit non-zero so a supervisor/healthcheck sees the failure.
   console.error(`[notion-mcp] sidecar terminated by signal ${signal ?? "unknown"}`);
   process.exit(1);

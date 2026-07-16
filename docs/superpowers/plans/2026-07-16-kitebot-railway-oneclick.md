@@ -187,10 +187,11 @@ Insert a section covering, accurately to the 3 services:
 - **What deploys:** 3 services from this repo — `agent` (Python deep-research, `rootDirectory: agent`), `notion-mcp` (`pnpm notion-mcp`), `channel` (`pnpm channel`); the `channel` reaches `agent` and `agent` reaches `notion-mcp` over Railway private networking (auto-wired by the IaC).
 - **Deploy via IaC (recommended):**
   ```bash
+  pnpm install            # installs the `railway` SDK the CLI uses to evaluate .railway/railway.ts
   npm i -g @railway/cli   # or: brew install railway
   railway login
-  railway link            # create/select a Railway project
-  railway config apply    # provisions agent + notion-mcp + channel from .railway/railway.ts
+  railway init            # create a new project (or `railway link` to select an existing one)
+  railway config apply    # from the repo root: provisions agent + notion-mcp + channel from .railway/railway.ts
   ```
 - **Set the secrets** (Railway → each service → Variables) — grouped checklist:
   - `agent`: `OPENAI_API_KEY` (required), `TAVILY_API_KEY` (optional — enables web research), `LINEAR_API_KEY` (optional). (`NOTION_MCP_AUTH_TOKEN` is referenced from `notion-mcp`, not set here.)

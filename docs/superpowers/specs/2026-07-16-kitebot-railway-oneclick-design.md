@@ -51,14 +51,18 @@ All three build from this repo (`source: github("CopilotKit/OpenTag")`), differi
 **Wiring (env in `railway.ts`, non-secret refs):**
 - `channel.env.AGENT_URL = "http://${{agent.RAILWAY_PRIVATE_DOMAIN}}:${{agent.PORT}}/"` (agent pins `PORT: "8123"`)
 - `agent.env.NOTION_MCP_URL = "http://${{notion-mcp.RAILWAY_PRIVATE_DOMAIN}}:${{notion-mcp.NOTION_MCP_PORT}}/mcp"`
-- `agent.env.OPENAI_MODEL = "gpt-5.5"` (and any other non-secret defaults)
-- `channel.env.INTELLIGENCE_CHANNEL_NAME = "kitebot"` (non-secret default)
+- `agent.env.NOTION_MCP_AUTH_TOKEN = "${{notion-mcp.NOTION_MCP_AUTH_TOKEN}}"` (single source of truth — set once on `notion-mcp`)
+- `OPENAI_MODEL` and `INTELLIGENCE_CHANNEL_NAME` are intentionally **not** set in `railway.ts`: the
+  code already defaults them (`gpt-5.5` in `agent/agent.py`, `"kitebot"` in `app/managed.ts`), and
+  leaving them unmanaged lets a deployer override them in the Railway UI without a later
+  `config apply` clobbering the change.
 
 **Secrets (deployer sets in the Railway UI; NOT stored in `railway.ts` — the IaC file
 declares/preserves them, never contains values):**
-- `agent`: `OPENAI_API_KEY` (required), `TAVILY_API_KEY` (optional), `NOTION_MCP_AUTH_TOKEN`,
-  optional `LINEAR_API_KEY`.
-- `notion-mcp`: `NOTION_TOKEN`, `NOTION_MCP_AUTH_TOKEN` (shared with `agent`).
+- `agent`: `OPENAI_API_KEY` (required), `TAVILY_API_KEY` (optional), optional `LINEAR_API_KEY`.
+  (`NOTION_MCP_AUTH_TOKEN` is **not** deployer-set here — the agent reads it via a reference
+  variable from `notion-mcp`.)
+- `notion-mcp`: `NOTION_TOKEN`, `NOTION_MCP_AUTH_TOKEN` (the agent references this value).
 - `channel`: `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`,
   `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID`. (`INTELLIGENCE_CHANNEL_NAME` is **not** a
   secret — it's a non-secret default of `"kitebot"` set in `railway.ts`.)

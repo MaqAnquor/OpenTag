@@ -23,11 +23,17 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Enable CORS for frontend communication
-# Using "*" for demo purposes - allows any origin including localhost and Railway deployments
+# Enable CORS for frontend communication. Defaults to "*" (any origin) for
+# local/demo use; on Railway the agent is reached only over private networking
+# by the channel service, so this is not a credential vector (allow_credentials
+# is False). Set CORS_ALLOW_ORIGINS to a comma-separated allowlist to lock it
+# down if the service is ever exposed publicly.
+_cors_origins = [
+    o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "*").split(",") if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -79,7 +85,10 @@ def main():
     # startCommand enforces via `--host ::`. Binding :: on Linux/macOS accepts
     # both IPv6 and IPv4, so local dev still works. Override with SERVER_HOST.
     host = os.getenv("SERVER_HOST", "::")
-    # Honor Railway's injected $PORT first, falling back to SERVER_PORT for local dev
+    # Local-dev entrypoint only: on Railway the startCommand runs `uvicorn
+    # main:app` directly, so this block is bypassed and the port comes from the
+    # startCommand's `--port ${PORT:-8123}`. Prefer PORT then SERVER_PORT here so
+    # `pnpm agent` matches that Railway behavior.
     raw_port = os.getenv("PORT") or os.getenv("SERVER_PORT", "8123")
     try:
         port = int(raw_port)

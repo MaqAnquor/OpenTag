@@ -73,6 +73,9 @@ CopilotKit Intelligence project for Intelligence mode. Step-by-step in
 OPENAI_API_KEY=sk-...      # the TS runtime (runtime.ts) uses OpenAI's Responses API for web search;
                            # the Python agent/ uses Tavily instead (see "Deep research" below)
 
+# Optional integrations (see setup.md):
+LINEAR_API_KEY=lin_api_... # optional — lets the agent file Linear tickets
+
 # Self-hosted mode:
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
@@ -171,10 +174,11 @@ so you don't set them by hand.
 **Deploy via Infrastructure-as-Code (recommended):**
 
 ```bash
+pnpm install                 # installs the `railway` SDK the CLI uses to evaluate .railway/railway.ts
 npm i -g @railway/cli        # or: brew install railway
 railway login
-railway link                 # create or select a Railway project
-railway config apply         # provisions agent + notion-mcp + channel from .railway/railway.ts
+railway init                 # create a new Railway project (or `railway link` to select an existing one)
+railway config apply         # from the repo root: provisions agent + notion-mcp + channel from .railway/railway.ts
 ```
 
 **Set the secrets** (Railway → each service → *Variables*). The IaC declares them with
