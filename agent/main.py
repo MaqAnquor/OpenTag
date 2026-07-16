@@ -28,8 +28,13 @@ app = FastAPI(
 # by the channel service, so this is not a credential vector (allow_credentials
 # is False). Set CORS_ALLOW_ORIGINS to a comma-separated allowlist to lock it
 # down if the service is ever exposed publicly.
+# `... or "*"` so an empty/blank CORS_ALLOW_ORIGINS (e.g. a deployer clearing the
+# var to "reset") falls back to the permissive default rather than an empty
+# allowlist that would block every origin.
 _cors_origins = [
-    o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "*").split(",") if o.strip()
+    o.strip()
+    for o in (os.getenv("CORS_ALLOW_ORIGINS") or "*").split(",")
+    if o.strip()
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -80,11 +85,13 @@ def main():
     """Run the server with uvicorn"""
     import uvicorn
 
-    # Default to :: (all interfaces, dual-stack) so this path is reachable over
-    # Railway's IPv6 private network too — matching the invariant the Railway
-    # startCommand enforces via `--host ::`. Binding :: on Linux/macOS accepts
-    # both IPv6 and IPv4, so local dev still works. Override with SERVER_HOST.
-    host = os.getenv("SERVER_HOST", "::")
+    # Local-dev default 0.0.0.0 (IPv4 all-interfaces) — accepts 127.0.0.1/
+    # localhost clients on every platform. This __main__ path runs only for
+    # local `pnpm agent`; on Railway the startCommand binds `--host ::` for the
+    # IPv6 private network, so this default does not affect the deploy. (Avoid
+    # defaulting to :: here: on macOS/BSD a `::` socket may not accept IPv4, so
+    # a local client dialing 127.0.0.1 could be refused.) Override with SERVER_HOST.
+    host = os.getenv("SERVER_HOST", "0.0.0.0")
     # Local-dev entrypoint only: on Railway the startCommand runs `uvicorn
     # main:app` directly, so this block is bypassed and the port comes from the
     # startCommand's `--port ${PORT:-8123}`. Prefer PORT then SERVER_PORT here so

@@ -1,6 +1,8 @@
 /**
- * Starts the official Notion MCP server as a Streamable-HTTP sidecar for
- * the triage agent (see `runtime.ts`). Run with `pnpm notion-mcp`.
+ * Starts the official Notion MCP server as a Streamable-HTTP sidecar for the
+ * agent backends — the TS runtime (`runtime.ts`) and the Python deep-research
+ * agent (`agent/`); on Railway the Python agent is the sole consumer (see
+ * `.railway/railway.ts`). Run with `pnpm notion-mcp`.
  *
  * Why a launcher instead of a raw npm script: the two `.env` values need to be
  * mapped to the two DIFFERENT things the Notion server expects — the Notion
@@ -101,6 +103,7 @@ const childEnv: NodeJS.ProcessEnv = {
 };
 delete childEnv["NOTION_TOKEN"];
 
+const isWindows = process.platform === "win32";
 const child = spawn(
   "npx",
   [
@@ -115,30 +118,31 @@ const child = spawn(
   ],
   {
     stdio: "inherit",
-    // shell:true so Windows resolves `npx` -> `npx.cmd`. Node refuses to
-    // spawn `.cmd`/`.bat` directly without a shell (CVE-2024-27980), which
-    // otherwise fails with `spawn EINVAL`.
-    shell: true,
+    // Windows only: shell:true so `npx` resolves to `npx.cmd`. Node refuses to
+    // spawn `.cmd`/`.bat` without a shell (CVE-2024-27980) → `spawn EINVAL`. On
+    // POSIX we spawn `npx` directly (no shell), which both removes the shell
+    // wrapper entirely and lets `detached` put the server in its own process
+    // group so we can signal the WHOLE tree on shutdown (see killTree below).
+    shell: isWindows,
+    detached: !isWindows,
     env: childEnv,
   },
 );
 
 // Set when WE forward a shutdown signal (below), so the exit handler can tell a
-// clean, operator/platform-initiated stop from an abnormal death.
+// clean, operator/platform-initiated stop from an abnormal termination.
 let shuttingDown = false;
 child.on("exit", (code, signal) => {
-  // A shutdown WE forwarded (SIGINT/SIGTERM) is deliberate — report success
-  // regardless of how the child surfaced it. Checked FIRST because under
-  // shell:true the wrapper may report the forwarded signal as a numeric
-  // 128+signum code (e.g. 143) rather than code===null; either way a clean
-  // stop must not trip the service's ON_FAILURE restart policy.
+  // A shutdown WE initiated (SIGINT/SIGTERM forwarded below) is clean.
   if (shuttingDown) process.exit(0);
-  // Normal exit: propagate the child's own status.
-  if (code !== null) process.exit(code);
-  // Signal death we did NOT initiate (SIGKILL/OOM/SIGSEGV) — a real crash;
-  // exit non-zero so a supervisor/healthcheck sees the failure.
-  console.error(`[notion-mcp] sidecar terminated by signal ${signal ?? "unknown"}`);
-  process.exit(1);
+  // Anything else is an unexpected termination of a long-running server — a
+  // FAILURE even on code 0 (e.g. the server exits after an unknown flag). Exit
+  // non-zero and log so Railway's ON_FAILURE restart fires and it's visible;
+  // preserve the child's own non-zero code when it has one.
+  console.error(
+    `[notion-mcp] sidecar exited unexpectedly (code=${code}, signal=${signal ?? "none"}) — treating as failure`,
+  );
+  process.exit(code || 1);
 });
 // Without this, a failed spawn (e.g. `npx` not on PATH -> ENOENT, or EACCES)
 // surfaces as an uncaught 'error' event with a raw Node stack trace instead
@@ -148,14 +152,24 @@ child.on("error", (err) => {
   console.error("[notion-mcp] failed to start the sidecar:", err.message);
   process.exit(1);
 });
-// Forward shutdown signals to the child, then escalate to SIGKILL if it hasn't
-// exited within a grace window — the child may be slow/ignore the signal, or
-// (under shell:true) the signal may reach the shell wrapper but not propagate
-// to the underlying server. `.unref()` so this timer never keeps us alive.
+// Signal the whole child tree. On POSIX the child is a detached group leader, so
+// process.kill(-pid) reaches npx AND the underlying node server; on Windows we
+// fall back to child.kill (no POSIX process groups). Wrapped because the group
+// may already be gone (ESRCH) by the time the escalation fires.
+const killTree = (sig: NodeJS.Signals) => {
+  try {
+    if (!isWindows && child.pid) process.kill(-child.pid, sig);
+    else child.kill(sig);
+  } catch {
+    // already exited — nothing to signal
+  }
+};
+// Forward shutdown signals, then escalate to SIGKILL if the tree hasn't exited
+// within a grace window. `.unref()` so this timer never keeps us alive.
 const shutdown = (sig: NodeJS.Signals) => {
   shuttingDown = true;
-  child.kill(sig);
-  setTimeout(() => child.kill("SIGKILL"), 5000).unref();
+  killTree(sig);
+  setTimeout(() => killTree("SIGKILL"), 5000).unref();
 };
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));

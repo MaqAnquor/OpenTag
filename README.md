@@ -207,6 +207,13 @@ Applying the config creates the services and their wiring; **KiteBot goes live o
 secrets are set and the `channel` service connects** — that's when your Intelligence dashboard
 flips *Waiting for runtime → live*.
 
+> **Cold-start note (Notion):** the `agent` loads its Notion tools once, at startup. On a first
+> cold deploy the `agent` can finish booting before `notion-mcp` is accepting connections, in
+> which case Notion research is silently unavailable for that deployment (chat, UI, and Tavily
+> web research still work). If KiteBot can't reach Notion after the first deploy, **redeploy the
+> `agent` service** once `notion-mcp` is up. (A lazy/retrying MCP load would remove this race —
+> tracked as a follow-up.)
+
 **"Deploy on Railway" button (optional):** to get a literal one-click button, publish this repo
 as a [Railway template](https://docs.railway.com/templates/create) from your Railway account,
 then drop the generated button in:

@@ -65,7 +65,8 @@ declares/preserves them, never contains values):**
 - `notion-mcp`: `NOTION_TOKEN`, `NOTION_MCP_AUTH_TOKEN` (the agent references this value).
 - `channel`: `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`,
   `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID`. (`INTELLIGENCE_CHANNEL_NAME` is **not** a
-  secret — it's a non-secret default of `"kitebot"` set in `railway.ts`.)
+  secret and is **not** set in `railway.ts` — `app/managed.ts` defaults it to `"kitebot"`; a
+  deployer can override it in the Railway UI, per the Wiring note above.)
 
 ## Artifacts
 
