@@ -104,7 +104,8 @@ export default defineRailway(() => {
     start: "pnpm channel",
     env: {
       AGENT_URL: "http://${{agent.RAILWAY_PRIVATE_DOMAIN}}:${{agent.PORT}}/",
-      INTELLIGENCE_CHANNEL_NAME: "kitebot",
+      // INTELLIGENCE_CHANNEL_NAME left unmanaged (app/managed.ts defaults it to
+      // "kitebot") so a UI override survives config apply, like OPENAI_MODEL.
       INTELLIGENCE_GATEWAY_WS_URL: preserve(),
       INTELLIGENCE_API_KEY: preserve(),
       INTELLIGENCE_ORG_ID: preserve(),

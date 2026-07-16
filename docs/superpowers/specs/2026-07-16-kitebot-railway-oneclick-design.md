@@ -65,7 +65,7 @@ declares/preserves them, never contains values):**
 
 ## Artifacts
 
-- **`.railway/railway.ts`** — `defineRailway` returning `project("kitebot", { resources: [agent, notionMcp, channel] })`
+- **`.railway/railway.ts`** — `defineRailway` returning `project("kitebot", { resources: [notionMcp, agent, channel] })`
   with the three `service(...)` definitions, `rootDirectory`, build/start/health, the
   reference-variable wiring above, non-secret env, and secrets via `preserve()` (so applying
   doesn't clobber deployer-set values).

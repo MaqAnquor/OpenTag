@@ -2,12 +2,14 @@
  * Starts the official Notion MCP server as a Streamable-HTTP sidecar for
  * the triage agent (see `runtime.ts`). Run with `pnpm notion-mcp`.
  *
- * Why a launcher instead of a raw npm script: the Notion server takes its
- * Notion integration secret via the `NOTION_TOKEN` env var and its HTTP
- * transport bearer via `AUTH_TOKEN` (or `--auth-token`). We keep the
- * example's env in a single `.env` (`NOTION_TOKEN` + `NOTION_MCP_AUTH_TOKEN`)
- * and map it here, so this works identically on Windows/macOS/Linux without
- * shell-specific env interpolation.
+ * Why a launcher instead of a raw npm script: the two `.env` values need to be
+ * mapped to the two DIFFERENT things the Notion server expects — the Notion
+ * integration secret (`NOTION_TOKEN`) becomes the OUTBOUND `Authorization:
+ * Bearer` the server sends to Notion's API (passed via `OPENAPI_MCP_HEADERS`,
+ * see below), and `NOTION_MCP_AUTH_TOKEN` becomes the server's INBOUND HTTP
+ * transport bearer (`AUTH_TOKEN` / `--auth-token`) that the agent presents to
+ * reach this sidecar. Doing the mapping here works identically on
+ * Windows/macOS/Linux without shell-specific env interpolation.
  */
 import "dotenv/config";
 import { spawn } from "node:child_process";
@@ -57,30 +59,37 @@ const port = String(portNumber);
 // and the agent's cross-container connection is refused. Validated because it's
 // passed to a `shell: true` spawn below.
 const rawHost = process.env["NOTION_MCP_HOST"];
-if (rawHost !== undefined && !/^[A-Za-z0-9.:_-]+$/.test(rawHost)) {
+// Must start with an alphanumeric or ":" (for IPv6 like "::") — this both keeps
+// it shell-inert and prevents a leading-"-" value being consumed as a flag by
+// the child CLI rather than as the host.
+if (rawHost !== undefined && !/^[A-Za-z0-9:][A-Za-z0-9.:_-]*$/.test(rawHost)) {
   console.error(
-    `[notion-mcp] NOTION_MCP_HOST must be a hostname or IP address (letters, ` +
-      `digits, ".", ":", "_", "-"), got: ${JSON.stringify(rawHost)}`,
+    `[notion-mcp] NOTION_MCP_HOST must be a hostname or IP address starting ` +
+      `with a letter, digit, or ":" (e.g. "::", "0.0.0.0", "localhost"), got: ` +
+      `${JSON.stringify(rawHost)}`,
   );
   process.exit(1);
 }
 const host = rawHost ?? "127.0.0.1";
 
-// Notion's REST API requires a `Notion-Version` header. Authenticate via
-// OPENAPI_MCP_HEADERS (carrying BOTH Authorization and Notion-Version) rather
-// than NOTION_TOKEN: when NOTION_TOKEN is set the server builds its own auth
-// header and omits the version, so the API rejects every call with
-// 400 `missing_version`. We deliberately do NOT pass NOTION_TOKEN below.
-const notionVersion = process.env["NOTION_VERSION"] ?? "2022-06-28";
+// Carry the Notion secret as the outbound `Authorization: Bearer` via
+// OPENAPI_MCP_HEADERS. We deliberately do NOT set `Notion-Version` here: the
+// server (@notionhq/notion-mcp-server ≥ 2.4) sources the API version
+// per-operation from its bundled OpenAPI spec, and a globally-configured
+// `Notion-Version` header would OVERRIDE those per-operation defaults, pinning
+// every call to one (soon-stale) version and breaking newer endpoints. Leaving
+// it out lets each operation use the version its schema was written for. (Set
+// NOTION_VERSION only if you must force a specific version for an older server.)
+const forcedVersion = process.env["NOTION_VERSION"];
 const openApiHeaders = JSON.stringify({
   Authorization: `Bearer ${notionToken}`,
-  "Notion-Version": notionVersion,
+  ...(forcedVersion ? { "Notion-Version": forcedVersion } : {}),
 });
 
 // OPENAPI_MCP_HEADERS is the sole Notion auth source. NOTION_TOKEN must be
 // absent from the child env (dotenv loaded it into process.env, so delete it
-// after the spread) — if present, the server ignores OPENAPI_MCP_HEADERS and
-// drops the Notion-Version header.
+// after the spread) — if present, the server would build its own auth header
+// from it and ignore OPENAPI_MCP_HEADERS.
 const childEnv: NodeJS.ProcessEnv = {
   ...process.env,
   OPENAPI_MCP_HEADERS: openApiHeaders,
@@ -110,10 +119,20 @@ const child = spawn(
   },
 );
 
-// code is null when the child died from a signal (SIGKILL/OOM/SIGSEGV, etc.)
-// rather than a normal exit; map that to a non-zero status so a supervisor
-// or healthcheck can detect the crash instead of seeing a false "success".
-child.on("exit", (code) => process.exit(code ?? 1));
+// Set when WE forward a shutdown signal (below), so the exit handler can tell a
+// clean, operator/platform-initiated stop from an abnormal death.
+let shuttingDown = false;
+child.on("exit", (code, signal) => {
+  // Normal exit: propagate the child's own status.
+  if (code !== null) process.exit(code);
+  // Died by a signal we forwarded (SIGINT/SIGTERM) — a deliberate shutdown, so
+  // report success and don't trip the service's ON_FAILURE restart policy.
+  if (shuttingDown) process.exit(0);
+  // Died by a signal we did NOT initiate (SIGKILL/OOM/SIGSEGV) — a real crash;
+  // exit non-zero so a supervisor/healthcheck sees the failure.
+  console.error(`[notion-mcp] sidecar terminated by signal ${signal ?? "unknown"}`);
+  process.exit(1);
+});
 // Without this, a failed spawn (e.g. `npx` not on PATH -> ENOENT, or EACCES)
 // surfaces as an uncaught 'error' event with a raw Node stack trace instead
 // of the clean, actionable messages this script prints for every other
@@ -122,5 +141,14 @@ child.on("error", (err) => {
   console.error("[notion-mcp] failed to start the sidecar:", err.message);
   process.exit(1);
 });
-process.on("SIGINT", () => child.kill("SIGINT"));
-process.on("SIGTERM", () => child.kill("SIGTERM"));
+// Forward shutdown signals to the child, then escalate to SIGKILL if it hasn't
+// exited within a grace window — the child may be slow/ignore the signal, or
+// (under shell:true) the signal may reach the shell wrapper but not propagate
+// to the underlying server. `.unref()` so this timer never keeps us alive.
+const shutdown = (sig: NodeJS.Signals) => {
+  shuttingDown = true;
+  child.kill(sig);
+  setTimeout(() => child.kill("SIGKILL"), 5000).unref();
+};
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));

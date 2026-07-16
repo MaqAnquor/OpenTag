@@ -74,7 +74,11 @@ def main():
     """Run the server with uvicorn"""
     import uvicorn
 
-    host = os.getenv("SERVER_HOST", "0.0.0.0")
+    # Default to :: (all interfaces, dual-stack) so this path is reachable over
+    # Railway's IPv6 private network too — matching the invariant the Railway
+    # startCommand enforces via `--host ::`. Binding :: on Linux/macOS accepts
+    # both IPv6 and IPv4, so local dev still works. Override with SERVER_HOST.
+    host = os.getenv("SERVER_HOST", "::")
     # Honor Railway's injected $PORT first, falling back to SERVER_PORT for local dev
     raw_port = os.getenv("PORT") or os.getenv("SERVER_PORT", "8123")
     try:

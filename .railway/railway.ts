@@ -78,7 +78,7 @@ export default defineRailway(() => {
         "http://${{notion-mcp.RAILWAY_PRIVATE_DOMAIN}}:${{notion-mcp.NOTION_MCP_PORT}}/mcp",
       NOTION_MCP_AUTH_TOKEN: "${{notion-mcp.NOTION_MCP_AUTH_TOKEN}}",
       // OPENAI_MODEL is intentionally NOT set here: the agent defaults to
-      // gpt-5.5 (agent/tools.py), and leaving it unmanaged means a deployer can
+      // gpt-5.5 (agent/agent.py), and leaving it unmanaged means a deployer can
       // override it in the Railway UI without a later `config apply` clobbering
       // the change. Set OPENAI_MODEL in the agent service's Variables to change it.
       //
@@ -97,7 +97,11 @@ export default defineRailway(() => {
       // brain: points at the agent service over private networking. The agent
       // pins PORT=8123, so ${{agent.PORT}} resolves to the port uvicorn binds.
       AGENT_URL: "http://${{agent.RAILWAY_PRIVATE_DOMAIN}}:${{agent.PORT}}/",
-      INTELLIGENCE_CHANNEL_NAME: "kitebot",
+      // INTELLIGENCE_CHANNEL_NAME is intentionally NOT set here: app/managed.ts
+      // already defaults it to "kitebot", and leaving it unmanaged means a
+      // deployer can set their own channel name in the Railway UI without a
+      // later `config apply` clobbering it. Set it in the channel service's
+      // Variables if your Intelligence channel is named something else.
       // secrets (set in Railway UI):
       INTELLIGENCE_GATEWAY_WS_URL: preserve(),
       INTELLIGENCE_API_KEY: preserve(),

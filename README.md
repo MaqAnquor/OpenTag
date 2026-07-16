@@ -191,11 +191,13 @@ railway config apply         # provisions agent + notion-mcp + channel from .rai
   with `TAVILY_API_KEY` — web research).
 - **`channel`** — `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`,
   `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID` (from your CopilotKit Intelligence
-  project + channel). `INTELLIGENCE_CHANNEL_NAME` defaults to `kitebot`.
+  project + channel).
 
 The inter-service URLs/ports are wired for you in [`.railway/railway.ts`](./.railway/railway.ts).
-The agent's model defaults to `gpt-5.5`; to use a different model, set `OPENAI_MODEL` in the
-`agent` service's *Variables* (the IaC doesn't manage it, so your choice survives re-applies).
+Two values are left unmanaged by the IaC so a UI override survives `railway config apply`: the
+agent's `OPENAI_MODEL` (defaults to `gpt-5.5`) and the channel's `INTELLIGENCE_CHANNEL_NAME`
+(defaults to `kitebot`). Set either in that service's *Variables* to change it — e.g. set
+`INTELLIGENCE_CHANNEL_NAME` if your Intelligence channel isn't named `kitebot`.
 
 Applying the config creates the services and their wiring; **KiteBot goes live only once the
 secrets are set and the `channel` service connects** — that's when your Intelligence dashboard
