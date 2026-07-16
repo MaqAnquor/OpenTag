@@ -152,6 +152,52 @@ With `agent/` in the mix, the local setup is now three pieces: the deep-research
 `:8200`) as before. `agent` and `runtime` are alternative brains for the same bot; run one or
 the other depending on what `AGENT_URL` targets.
 
+## Deploy to Railway (one-click)
+
+The whole KiteBot stack deploys to [Railway](https://railway.com) as **three services**, all
+built from this one repo and wired together automatically over Railway's private networking:
+
+| Service | What it is | Build |
+| --- | --- | --- |
+| `agent` | the Python deep-research backend (`agent/`) | nixpacks, `uvicorn`, `/health` (root dir `agent/`) |
+| `notion-mcp` | the Notion MCP sidecar (`pnpm notion-mcp`) | Node |
+| `channel` | the KiteBot channel host (`pnpm channel`) | Node |
+
+`channel` reaches `agent` via `AGENT_URL`, and `agent` reaches `notion-mcp` via `NOTION_MCP_URL`
+— both wired with Railway reference variables in [`.railway/railway.ts`](./.railway/railway.ts),
+so you don't set them by hand.
+
+**Deploy via Infrastructure-as-Code (recommended):**
+
+```bash
+npm i -g @railway/cli        # or: brew install railway
+railway login
+railway link                 # create or select a Railway project
+railway config apply         # provisions agent + notion-mcp + channel from .railway/railway.ts
+```
+
+**Set the secrets** (Railway → each service → *Variables*). The IaC declares them with
+`preserve()` and never stores values — you fill them in:
+
+- **`agent`** — `OPENAI_API_KEY` (required); `TAVILY_API_KEY` (optional — enables web research);
+  `NOTION_MCP_AUTH_TOKEN` (must match `notion-mcp`); `LINEAR_API_KEY` (optional).
+- **`notion-mcp`** — `NOTION_TOKEN`; `NOTION_MCP_AUTH_TOKEN` (same value as `agent`).
+- **`channel`** — `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`,
+  `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID` (from your CopilotKit Intelligence
+  project + channel). `INTELLIGENCE_CHANNEL_NAME` defaults to `kitebot`.
+
+Applying the config creates the services and their wiring; **KiteBot goes live only once the
+secrets are set and the `channel` service connects** — that's when your Intelligence dashboard
+flips *Waiting for runtime → live*.
+
+**"Deploy on Railway" button (optional):** to get a literal one-click button, publish this repo
+as a [Railway template](https://docs.railway.com/templates/create) from your Railway account,
+then drop the generated button in:
+
+```md
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/<your-template-id>)
+```
+
 ## Don't want to host it yourself?
 
 Self-hosting means you run and scale the runtime, persistence, and inspection tooling yourself.
