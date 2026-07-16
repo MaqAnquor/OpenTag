@@ -20,7 +20,8 @@ deploy/button steps.
   path is absolute from repo root.
 - **Infrastructure-as-Code** (`.railway/railway.ts`, `railway/iac` SDK) defines the **whole
   project — every service + its build/start/health + env + inter-service wiring — in one
-  file**, applied with `railway config apply` (CLI, needs `railway login` + `railway link`).
+  file**, applied with `railway config apply` (CLI, needs `railway login` + `railway init` to
+  create a project, or `railway link` to select an existing one).
 - **Reference variables** wire services: a service reads another's private domain via
   `svc.env.RAILWAY_PRIVATE_DOMAIN` (compiles to `${{svc.RAILWAY_PRIVATE_DOMAIN}}`); Railway
   resolves `${{other.PORT}}`-style refs at deploy.
@@ -80,7 +81,8 @@ declares/preserves them, never contains values):**
   managed by both IaC and config-as-code, so the agent's build+deploy config lives only in
   `.railway/railway.ts`.
 - **`README.md` "Deploy to Railway"** — two documented paths: (a) `railway login && railway
-  link && railway config apply` (IaC), and (b) publish a Railway template from the repo → get
+  init && railway config apply` (IaC; `railway link` instead of `init` for an existing project),
+  and (b) publish a Railway template from the repo → get
   a "Deploy on Railway" button (steps + the button markdown, noting it needs the deployer's
   Railway account). Plus the full **secrets checklist** grouped by service.
 - **Dependency changes in `package.json`** — add the `railway` devDependency (so

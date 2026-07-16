@@ -93,6 +93,12 @@ export default defineRailway(() => {
   const channel = service("channel", {
     source: github(REPO),
     start: "pnpm channel",
+    deploy: {
+      // Parity with agent/notion-mcp: restart the long-running channel host on
+      // crash instead of leaving KiteBot silently offline.
+      restartPolicyType: "ON_FAILURE",
+      restartPolicyMaxRetries: 5,
+    },
     env: {
       // brain: points at the agent service over private networking. The agent
       // pins PORT=8123, so ${{agent.PORT}} resolves to the port uvicorn binds.

@@ -37,9 +37,10 @@ if (!notionToken) {
 // Port the sidecar listens on. Must agree with NOTION_MCP_URL as dialed by
 // runtime.ts (TS backend) AND by the Python agent/ backend on Railway — both
 // default to http://127.0.0.1:3001/mcp. Validated up front because it's passed
-// as a `--port` arg to a `shell: true` spawn below — an unvalidated value with
-// spaces/shell metacharacters could mangle or inject the command. An empty
-// string (a bare `NOTION_MCP_PORT=` in .env) is treated as unset → default.
+// as a `--port` arg to the spawn below, which uses a shell on Windows
+// (`shell: isWindows`) — an unvalidated value with spaces/shell metacharacters
+// could mangle or inject the command there. An empty string (a bare
+// `NOTION_MCP_PORT=` in .env) is treated as unset → default.
 const rawPort = process.env["NOTION_MCP_PORT"] || undefined;
 if (rawPort !== undefined && !/^\d+$/.test(rawPort)) {
   console.error(
@@ -61,7 +62,8 @@ const port = String(portNumber);
 // NOTION_MCP_HOST=:: so the sidecar listens on all interfaces and is reachable
 // over Railway's (IPv6) private network — without it the server binds 127.0.0.1
 // and the agent's cross-container connection is refused. Validated because it's
-// passed to a `shell: true` spawn below.
+// passed as a `--host` arg to the spawn below (which uses a shell on Windows,
+// `shell: isWindows`), and to prevent a leading `-` being read as a flag.
 const rawHost = process.env["NOTION_MCP_HOST"] || undefined;
 // Must start with an alphanumeric or ":" (for IPv6 like "::") — this both keeps
 // it shell-inert and prevents a leading-"-" value being consumed as a flag by
