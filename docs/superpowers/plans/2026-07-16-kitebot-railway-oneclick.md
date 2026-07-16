@@ -102,6 +102,7 @@ export default defineRailway(() => {
   const channel = service("channel", {
     source: github(REPO),
     start: "pnpm channel",
+    deploy: { restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 5 },
     env: {
       AGENT_URL: "http://${{agent.RAILWAY_PRIVATE_DOMAIN}}:${{agent.PORT}}/",
       // INTELLIGENCE_CHANNEL_NAME left unmanaged (app/managed.ts defaults it to
