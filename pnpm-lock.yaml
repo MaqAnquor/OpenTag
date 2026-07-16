@@ -66,6 +66,9 @@ importers:
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
+      railway:
+        specifier: ^3.5.7
+        version: 3.5.7
       tsx:
         specifier: ^4.19.2
         version: 4.23.1
@@ -1983,6 +1986,11 @@ packages:
 
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
+
+  railway@3.5.7:
+    resolution: {integrity: sha512-2DdaAw2eSQuCtSn+/VuPNOdnbynxTVmRIQlefhc0maULZTr16Uy/5/FjumnI1lONZgflKG/WMGm9QmUdnApZFw==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   range-parser@1.2.1:
     resolution: {integrity: sha512-Hrgsx+orqoygnmhFbKaHE6c296J+HTAQXoxEF6gNupROmmGJRoyzfG3ccAveqCBrwr/2yxQ5BVd/GTl5agOwSg==}
@@ -4537,6 +4545,12 @@ snapshots:
       side-channel: 1.1.1
 
   quick-format-unescaped@4.0.4: {}
+
+  railway@3.5.7:
+    dependencies:
+      '@graphql-typed-document-node/core': 3.2.0(graphql@16.14.2)
+      graphql: 16.14.2
+      tsx: 4.23.1
 
   range-parser@1.2.1: {}
 
