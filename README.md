@@ -186,6 +186,10 @@ railway config apply         # provisions agent + notion-mcp + channel from .rai
   `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID` (from your CopilotKit Intelligence
   project + channel). `INTELLIGENCE_CHANNEL_NAME` defaults to `kitebot`.
 
+Non-secret config (the agent's `OPENAI_MODEL`, defaulting to `gpt-5.5`, and the inter-service
+URLs/ports) is set for you in [`.railway/railway.ts`](./.railway/railway.ts) — override
+`OPENAI_MODEL` in the `agent` service's *Variables* if you want a different model.
+
 Applying the config creates the services and their wiring; **KiteBot goes live only once the
 secrets are set and the `channel` service connects** — that's when your Intelligence dashboard
 flips *Waiting for runtime → live*.

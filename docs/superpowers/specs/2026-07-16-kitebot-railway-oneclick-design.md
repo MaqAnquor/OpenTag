@@ -36,17 +36,23 @@ deploy/button steps.
 All three build from this repo (`source: github("CopilotKit/OpenTag")`), differing by
 `rootDirectory` + start command:
 
-1. **`agent`** — Python deep-research service. `rootDirectory: "agent"`, nixpacks,
-   `start: "uvicorn main:app --host 0.0.0.0 --port $PORT"`, `healthcheck: "/health"`.
-2. **`notion-mcp`** — Notion MCP sidecar. root repo, `start: "pnpm notion-mcp"`, listens on
-   `$PORT` (the script honors `NOTION_MCP_PORT`/`PORT`).
+1. **`agent`** — Python deep-research service. `rootDirectory: "agent"`, nixpacks
+   (`build.builder: "NIXPACKS"`), `startCommand: "uvicorn main:app --host :: --port ${PORT:-8123}"`
+   (bind `::` for Railway's dual-stack/IPv6 private network), `healthcheckPath: "/health"`,
+   `healthcheckTimeout: 300`, `restartPolicyType: "ON_FAILURE"`. All build+deploy config lives
+   in `railway.ts`; there is **no** `agent/railway.toml` (Railway forbids a service being managed
+   by both IaC and config-as-code).
+2. **`notion-mcp`** — Notion MCP sidecar. root repo, `start: "pnpm notion-mcp"`. The launcher
+   (`scripts/start-notion-mcp.ts`) binds `NOTION_MCP_PORT` (default `3001`) and does **not** read
+   Railway's `$PORT`, so the IaC pins `NOTION_MCP_PORT: "3001"` and the agent dials that same var.
 3. **`channel`** — TS channel host. root repo, `start: "pnpm channel"`. Connects out to the
    Intelligence gateway; no inbound public port needed.
 
 **Wiring (env in `railway.ts`, non-secret refs):**
-- `channel.env.AGENT_URL = "http://${{agent.RAILWAY_PRIVATE_DOMAIN}}:${{agent.PORT}}/"`
-- `agent.env.NOTION_MCP_URL = "http://${{notion-mcp.RAILWAY_PRIVATE_DOMAIN}}:${{notion-mcp.PORT}}/mcp"`
+- `channel.env.AGENT_URL = "http://${{agent.RAILWAY_PRIVATE_DOMAIN}}:${{agent.PORT}}/"` (agent pins `PORT: "8123"`)
+- `agent.env.NOTION_MCP_URL = "http://${{notion-mcp.RAILWAY_PRIVATE_DOMAIN}}:${{notion-mcp.NOTION_MCP_PORT}}/mcp"`
 - `agent.env.OPENAI_MODEL = "gpt-5.5"` (and any other non-secret defaults)
+- `channel.env.INTELLIGENCE_CHANNEL_NAME = "kitebot"` (non-secret default)
 
 **Secrets (deployer sets in the Railway UI; NOT stored in `railway.ts` — the IaC file
 declares/preserves them, never contains values):**
@@ -54,7 +60,8 @@ declares/preserves them, never contains values):**
   optional `LINEAR_API_KEY`.
 - `notion-mcp`: `NOTION_TOKEN`, `NOTION_MCP_AUTH_TOKEN` (shared with `agent`).
 - `channel`: `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`,
-  `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID`, `INTELLIGENCE_CHANNEL_NAME`.
+  `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID`. (`INTELLIGENCE_CHANNEL_NAME` is **not** a
+  secret — it's a non-secret default of `"kitebot"` set in `railway.ts`.)
 
 ## Artifacts
 
