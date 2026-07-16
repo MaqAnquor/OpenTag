@@ -15,9 +15,9 @@ import {
   ModalSelect,
   ModalSelectOption,
   RadioButtons,
-} from "@copilotkit/bot-ui";
-import type { ModalView } from "@copilotkit/bot-ui";
-import type { ModalSubmitHandler } from "@copilotkit/bot";
+} from "@copilotkit/channels-ui";
+import type { ModalView } from "@copilotkit/channels-ui";
+import type { ModalSubmitHandler } from "@copilotkit/channels";
 import { senderContext } from "../sender-context.js";
 
 export const FILE_ISSUE_CALLBACK = "file_issue";
@@ -75,7 +75,9 @@ export const fileIssueSubmit: ModalSubmitHandler = async ({
       console.error("[bot] file-issue modal run failed", err);
       void thread
         .post("Sorry — I couldn't file that issue. Please try again.")
-        .catch(() => {});
+        .catch((postErr: unknown) =>
+          console.error("[file-issue] failed to post error", postErr),
+        );
     });
 };
 
@@ -118,5 +120,8 @@ export function FileIssueModal({ rich }: { rich: boolean }): ModalView {
         </RadioButtons>
       ) : null}
     </Modal>
+    // JSX expressions type as `JSX.Element` (= `BotNode`, not `ModalView`) per
+    // the channels-ui jsx-runtime, so the narrower literal `type: "modal"` needs
+    // an explicit assertion even though `Modal` itself returns `ModalView`.
   ) as ModalView;
 }

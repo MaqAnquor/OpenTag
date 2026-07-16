@@ -11,11 +11,36 @@
  * surfaces with native structured args (e.g. Discord). The `options` schema
  * is optional and used there for registration/typing.
  */
-import { defineBotCommand } from "@copilotkit/bot";
-import type { BotCommand } from "@copilotkit/bot";
+import { defineBotCommand } from "@copilotkit/channels";
+import type { BotCommand } from "@copilotkit/channels";
+import type { Thread as BotThread } from "@copilotkit/channels-ui";
 import { senderContext } from "../sender-context.js";
 import { IssueCard } from "../components/index.js";
 import { FileIssueModal } from "../modals/file-issue.js";
+
+/**
+ * `thread.runAgent` can reject (backend failure, network error, etc). Unlike
+ * `onMention` (which wraps its own call), the slash-command handlers below
+ * called it bare, so a failure only surfaced as an unhandledRejection and the
+ * user saw nothing. This wraps the call so we always log and tell the user
+ * something went wrong instead of going silent.
+ */
+async function runAgentSafely(
+  commandName: string,
+  thread: Pick<BotThread, "runAgent" | "post">,
+  input: Parameters<BotThread["runAgent"]>[0],
+): Promise<void> {
+  try {
+    await thread.runAgent(input);
+  } catch (err) {
+    console.error(`[command] ${commandName} run failed`, err);
+    await thread
+      .post("Sorry — I hit an error handling that. Please try again.")
+      .catch((postErr: unknown) =>
+        console.error(`[command] ${commandName} failed to post error`, postErr),
+      );
+  }
+}
 
 export const appCommands: BotCommand[] = [
   // `/agent <text>` — a mention-free entry point. (Previously hardcoded in the
@@ -30,7 +55,7 @@ export const appCommands: BotCommand[] = [
         await thread.post("Usage: `/agent <your question>`");
         return;
       }
-      await thread.runAgent({
+      await runAgentSafely("agent", thread, {
         prompt: text,
         context: senderContext(user, thread.platform),
       });
@@ -47,7 +72,7 @@ export const appCommands: BotCommand[] = [
       const prompt = text
         ? `Triage this and propose Linear issues to file: ${text}`
         : "Triage the current conversation: summarize it and propose Linear issues to file.";
-      await thread.runAgent({
+      await runAgentSafely("triage", thread, {
         prompt,
         context: senderContext(user, thread.platform),
       });
@@ -114,7 +139,7 @@ export const appCommands: BotCommand[] = [
           "Modals aren't supported here — let's do it in chat instead. " +
             "Tell me the issue title and a short description and I'll file it.",
         );
-        await thread.runAgent({
+        await runAgentSafely("file-issue", thread, {
           prompt:
             "The user wants to file a Linear issue but this platform has no modal form. " +
             "Ask them for a title and description, then (after the usual confirm) file it.",

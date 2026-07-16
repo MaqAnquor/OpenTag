@@ -1,6 +1,6 @@
 {
   "display_information": {
-    "name": "CopilotKit Triage",
+    "name": "KiteBot",
     "description": "On-call triage assistant \u2014 query/file Linear issues and find/write Notion pages from Slack.",
     "background_color": "#1a1a1a"
   },
@@ -11,7 +11,7 @@
       "messages_tab_read_only_enabled": false
     },
     "bot_user": {
-      "display_name": "CopilotKit Triage",
+      "display_name": "KiteBot",
       "always_online": true
     },
     "assistant_view": {

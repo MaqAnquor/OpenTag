@@ -5,7 +5,7 @@
  * that runs on the chat-platform side of the bot for this deployment.
  *
  * MULTI-PLATFORM: this single app drives Slack, Discord, Telegram, and/or
- * WhatsApp from one process. `@copilotkit/bot`'s `createBot` accepts an array
+ * WhatsApp from one process. `@copilotkit/channels`'s `createBot` accepts an array
  * of adapters and starts them all, so we include each platform's adapter only
  * when its secrets are present. Drop in `SLACK_*` to run Slack, `DISCORD_*` for
  * Discord, `TELEGRAM_BOT_TOKEN` for Telegram, `WHATSAPP_*` for WhatsApp — or any
@@ -17,29 +17,29 @@
  * here in the file you copy from to start a new bot.
  */
 import "dotenv/config";
-import { createBot } from "@copilotkit/bot";
-import type { PlatformAdapter, BotTool, ContextEntry } from "@copilotkit/bot";
+import { createBot } from "@copilotkit/channels";
+import type { PlatformAdapter, BotTool, ContextEntry } from "@copilotkit/channels";
 import {
   slack,
   defaultSlackTools,
   defaultSlackContext,
   SanitizingHttpAgent,
-} from "@copilotkit/bot-slack";
+} from "@copilotkit/channels-slack";
 import {
   discord,
   defaultDiscordTools,
   defaultDiscordContext,
-} from "@copilotkit/bot-discord";
+} from "@copilotkit/channels-discord";
 import {
   telegram,
   defaultTelegramTools,
   defaultTelegramContext,
-} from "@copilotkit/bot-telegram";
+} from "@copilotkit/channels-telegram";
 import {
   whatsapp,
   defaultWhatsAppTools,
   defaultWhatsAppContext,
-} from "@copilotkit/bot-whatsapp";
+} from "@copilotkit/channels-whatsapp";
 import { appTools } from "./tools/index.js";
 import { appContext } from "./context/app-context.js";
 import { appCommands } from "./commands/index.js";
@@ -84,9 +84,9 @@ async function main() {
         // `:wrench:` rows, or pane "is using `tool`…" status). Tools still run;
         // only the display is hidden.
         showToolStatus: false,
-        // Kite keeps DMs conversational and responds to explicit app mentions
+        // KiteBot keeps DMs conversational and responds to explicit app mentions
         // in channels/threads. Plain channel thread replies stay quiet unless
-        // they mention Kite again.
+        // they mention KiteBot again.
         respondTo: {
           directMessages: true,
           appMentions: { reply: "thread" },
@@ -150,9 +150,9 @@ async function main() {
     // routes there); locally it defaults to 3000. Fail loud on a malformed
     // PORT rather than letting `Number("abc")` → NaN reach `server.listen()`.
     const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-    if (!Number.isInteger(port) || port < 0) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
       console.error(
-        `Invalid PORT: "${process.env.PORT}" is not a valid port number`,
+        `Invalid PORT: "${process.env.PORT}" is not a valid port number (must be an integer between 1 and 65535)`,
       );
       process.exit(1);
     }
@@ -228,7 +228,9 @@ async function main() {
       console.error("[bot] agent run failed", err);
       await thread
         .post("Sorry — I hit an error handling that. Please try again.")
-        .catch(() => {});
+        .catch((postErr: unknown) =>
+          console.error("[bot] failed to post agent error", postErr),
+        );
     }
   });
 
@@ -244,16 +246,20 @@ async function main() {
   // platforms without suggested-prompt support no-op.
   bot.onThreadStarted(async ({ thread, user }) => {
     if (!user?.name) return;
-    await thread.setSuggestedPrompts([
-      {
-        title: `Triage ${user.name}'s issues`,
-        message: "Triage my open issues",
-      },
-      {
-        title: "What shipped this week?",
-        message: "Summarize what shipped this week",
-      },
-    ]);
+    try {
+      await thread.setSuggestedPrompts([
+        {
+          title: `Triage ${user.name}'s issues`,
+          message: "Triage my open issues",
+        },
+        {
+          title: "What shipped this week?",
+          message: "Summarize what shipped this week",
+        },
+      ]);
+    } catch (err) {
+      console.error("[bot] onThreadStarted failed", err);
+    }
   });
 
   await bot.start();
@@ -263,13 +269,27 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     console.log(`\n[bot] received ${signal}, stopping…`);
-    await bot.stop();
+    let exitCode = 0;
+    try {
+      await bot.stop();
+    } catch (err) {
+      console.error("[bot] error stopping bot", err);
+      exitCode = 1;
+    }
     // Tear down the shared headless browser used for chart/diagram rendering.
-    await closeBrowser();
-    process.exit(0);
+    await closeBrowser().catch((err: unknown) =>
+      console.error("[bot] browser cleanup failed (continuing shutdown)", err),
+    );
+    process.exit(exitCode);
   };
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  const runShutdown = (signal: string): void => {
+    shutdown(signal).catch((err: unknown) => {
+      console.error(`[bot] fatal during ${signal} shutdown`, err);
+      process.exit(1);
+    });
+  };
+  process.on("SIGINT", () => runShutdown("SIGINT"));
+  process.on("SIGTERM", () => runShutdown("SIGTERM"));
 }
 
 // Fail loud, not silent: surface any stray async error (e.g. a throw deep in an

@@ -1,10 +1,10 @@
 display_information:
-  name: CopilotKit Triage
+  name: KiteBot
   description: On-call triage assistant — query/file Linear issues and find/write Notion pages from Slack.
   background_color: "#1a1a1a"
 features:
   bot_user:
-    display_name: CopilotKit Triage
+    display_name: KiteBot
     always_online: true
   # App Home: enable the Messages tab so users can DM the bot (and so the tab
   # isn't read-only — otherwise Slack shows "Sending messages to this app has

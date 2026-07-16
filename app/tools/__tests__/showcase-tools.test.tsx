@@ -7,13 +7,13 @@
  * updates the message in place with a green "Acknowledged" card.
  */
 import { describe, it, expect, vi } from "vitest";
-import { renderToIR } from "@copilotkit/bot-ui";
+import { renderToIR } from "@copilotkit/channels-ui";
 import type {
   BotNode,
   InteractionContext,
   ClickHandler,
-} from "@copilotkit/bot-ui";
-import { renderSlackMessage } from "@copilotkit/bot-slack";
+} from "@copilotkit/channels-ui";
+import { renderSlackMessage } from "@copilotkit/channels-slack";
 import {
   showIncidentTool,
   showStatusTool,
@@ -47,18 +47,29 @@ function findWithProp(
   type: string,
   prop: string,
 ): BotNode | undefined {
+  return findAllWithProp(nodes, type, prop)[0];
+}
+
+/** Depth-first: find every IR node whose `type` matches and that has the named prop. */
+function findAllWithProp(
+  nodes: BotNode[],
+  type: string,
+  prop: string,
+): BotNode[] {
+  const matches: BotNode[] = [];
   for (const node of nodes) {
-    if (node.type === type && node.props && prop in node.props) return node;
+    if (node.type === type && node.props && prop in node.props) {
+      matches.push(node);
+    }
     const children = node.props?.children;
     const childArr = Array.isArray(children)
       ? (children as BotNode[])
       : children && typeof children === "object"
         ? [children as BotNode]
         : [];
-    const found = findWithProp(childArr, type, prop);
-    if (found) return found;
+    matches.push(...findAllWithProp(childArr, type, prop));
   }
-  return undefined;
+  return matches;
 }
 
 describe("show_incident render-tool", () => {
@@ -129,6 +140,80 @@ describe("show_incident render-tool", () => {
     expect(accent).toBe("#27AE60"); // green
     expect(JSON.stringify(blocks)).toContain("✅ Acknowledged · Checkout 500s");
     expect(JSON.stringify(blocks)).toContain("Ack'd by Alem");
+  });
+
+  it("the Escalate button's onClick posts a paging notice", async () => {
+    const { posts, thread } = fakeThread();
+    await showIncidentTool.handler(
+      {
+        id: "INC-1",
+        title: "Checkout 500s",
+        severity: "SEV1",
+        summary: "Error rate spiking on /checkout.",
+      },
+      { thread } as unknown as IncidentCtx,
+    );
+
+    const ir = renderToIR(posts[0] as never);
+    // The card has two buttons (Acknowledge, Escalate) — find the Escalate one
+    // by its `value.action`.
+    const buttons = findAllWithProp(ir, "button", "onClick");
+    const escalateButton = buttons.find(
+      (b) => (b.props?.value as { action?: string })?.action === "escalate",
+    );
+    expect(escalateButton).toBeDefined();
+
+    const onClick = escalateButton?.props.onClick as ClickHandler;
+
+    await onClick({
+      thread,
+      message: {
+        ref: { id: "m1" },
+        text: "",
+        user: { id: "U1" },
+        platform: "slack",
+      },
+      user: { id: "U1", name: "Alem" },
+      action: { id: "a1" },
+      values: {},
+      platform: "slack",
+    } as unknown as InteractionContext);
+
+    expect(thread.post).toHaveBeenCalledWith(
+      "🚨 Escalating *Checkout 500s* — paging the next on-call.",
+    );
+  });
+
+  it("uses the SEV2 accent (#F2994A)", async () => {
+    const { posts, thread } = fakeThread();
+    await showIncidentTool.handler(
+      {
+        id: "INC-2",
+        title: "Latency spike",
+        severity: "SEV2",
+        summary: "p99 latency elevated.",
+      },
+      { thread } as unknown as IncidentCtx,
+    );
+
+    const { accent } = renderSlackMessage(renderToIR(posts[0] as never));
+    expect(accent).toBe("#F2994A"); // SEV2
+  });
+
+  it("uses the SEV3 accent (#5E6AD2)", async () => {
+    const { posts, thread } = fakeThread();
+    await showIncidentTool.handler(
+      {
+        id: "INC-3",
+        title: "Minor blip",
+        severity: "SEV3",
+        summary: "Transient error rate uptick.",
+      },
+      { thread } as unknown as IncidentCtx,
+    );
+
+    const { accent } = renderSlackMessage(renderToIR(posts[0] as never));
+    expect(accent).toBe("#5E6AD2"); // SEV3
   });
 });
 

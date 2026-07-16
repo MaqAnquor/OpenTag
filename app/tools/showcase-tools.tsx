@@ -1,6 +1,6 @@
 /**
  * Showcase render-tools — three small JSX `BotTool`s that demonstrate the
- * `@copilotkit/bot-ui` vocabulary end-to-end:
+ * `@copilotkit/channels-ui` vocabulary end-to-end:
  *
  *  - `show_incident` — an interactive card whose `Acknowledge`/`Escalate`
  *    buttons carry inline `onClick` handlers. These are FIRE-AND-FORGET
@@ -20,9 +20,9 @@ import {
   Field,
   Actions,
   Button,
-} from "@copilotkit/bot-ui";
-import type { InteractionContext } from "@copilotkit/bot-ui";
-import { defineBotTool } from "@copilotkit/bot";
+} from "@copilotkit/channels-ui";
+import type { InteractionContext } from "@copilotkit/channels-ui";
+import { defineBotTool } from "@copilotkit/channels";
 
 // ── show_incident ──────────────────────────────────────────────────────────
 
@@ -54,13 +54,17 @@ export function IncidentCard({ id, title, severity, summary }: IncidentProps) {
           value={{ action: "ack", id }}
           style="primary"
           onClick={async ({ thread, user, message }: InteractionContext) => {
-            await thread.update(
-              message.ref,
-              <Message accent="#27AE60">
-                <Header>{`✅ Acknowledged · ${title}`}</Header>
-                <Context>{`Ack'd by ${user?.name ?? user?.id ?? "someone"}`}</Context>
-              </Message>,
-            );
+            try {
+              await thread.update(
+                message.ref,
+                <Message accent="#27AE60">
+                  <Header>{`✅ Acknowledged · ${title}`}</Header>
+                  <Context>{`Ack'd by ${user?.name ?? user?.id ?? "someone"}`}</Context>
+                </Message>,
+              );
+            } catch (err) {
+              console.error("[showcase] onClick failed", err);
+            }
           }}
         >
           Acknowledge
@@ -69,9 +73,13 @@ export function IncidentCard({ id, title, severity, summary }: IncidentProps) {
           value={{ action: "escalate", id }}
           style="danger"
           onClick={async ({ thread }: InteractionContext) => {
-            await thread.post(
-              `🚨 Escalating *${title}* — paging the next on-call.`,
-            );
+            try {
+              await thread.post(
+                `🚨 Escalating *${title}* — paging the next on-call.`,
+              );
+            } catch (err) {
+              console.error("[showcase] onClick failed", err);
+            }
           }}
         >
           Escalate

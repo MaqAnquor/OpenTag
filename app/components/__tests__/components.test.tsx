@@ -1,6 +1,6 @@
 /**
  * Block Kit parity tests for the JSX render components. Each component is a
- * `@copilotkit/bot-ui` `ComponentFn`; we assert the full
+ * `@copilotkit/channels-ui` `ComponentFn`; we assert the full
  * `renderSlackMessage(renderToIR(<… />))` output — both the `blocks` and the
  * attachment `accent` — against the legacy `defineSlackComponent` shapes.
  *
@@ -15,12 +15,13 @@
  * so they render identically on both Slack and Telegram.
  */
 import { describe, it, expect } from "vitest";
-import { renderToIR } from "@copilotkit/bot-ui";
-import { renderSlackMessage } from "@copilotkit/bot-slack";
-import { renderTelegram } from "@copilotkit/bot-telegram";
+import { renderToIR } from "@copilotkit/channels-ui";
+import { renderSlackMessage } from "@copilotkit/channels-slack";
+import { renderTelegram } from "@copilotkit/channels-telegram";
 import { IssueList } from "../issue-list.js";
 import { IssueCard } from "../issue-card.js";
 import { PageList } from "../page-list.js";
+import { accentForIssues } from "../_status.js";
 
 describe("IssueList component", () => {
   it("renders exactly three blocks: header, a single section with one line per issue, and a count footer", () => {
@@ -120,6 +121,55 @@ describe("IssueList component", () => {
     expect(json).toContain("unassigned");
     // No urgent/high priority → Linear purple.
     expect(accent).toBe("#5E6AD2");
+  });
+
+  it("trims titles longer than TITLE_MAX (70 chars) with an ellipsis", () => {
+    const longTitle = "x".repeat(80);
+    const { blocks } = renderSlackMessage(
+      renderToIR(
+        <IssueList
+          issues={[{ identifier: "CPK-1", title: longTitle }]}
+        />,
+      ),
+    );
+    const section = blocks[1] as { text: { text: string } };
+    expect(section.text.text).toContain(`${"x".repeat(70)}…`);
+    expect(section.text.text).not.toContain("x".repeat(71));
+  });
+
+  it("includes priority in the per-row meta line, and omits it gracefully when absent", () => {
+    const { blocks } = renderSlackMessage(
+      renderToIR(
+        <IssueList
+          issues={[
+            {
+              identifier: "CPK-1",
+              title: "Has priority",
+              assignee: "Alem",
+              priority: "High",
+              updated: "2d ago",
+            },
+            { identifier: "CPK-2", title: "No priority" },
+          ]}
+        />,
+      ),
+    );
+    const section = blocks[1] as { text: { text: string } };
+    const lines = section.text.text.split("\n");
+    // Priority sits alongside assignee/updated in the meta, matching the
+    // existing " · " separator convention.
+    expect(lines[0]).toContain("Alem · High · 2d ago");
+    // No priority → no dangling separator, still falls back to unassigned.
+    expect(lines[1]).toContain("unassigned");
+    expect(lines[1]).not.toContain("·");
+  });
+});
+
+describe("accentForIssues", () => {
+  it("maps a list whose hottest priority is 'High' to the high (hot) accent", () => {
+    expect(
+      accentForIssues([{ priority: "Low" }, { priority: "High" }]),
+    ).toBe("#F2994A");
   });
 });
 
@@ -245,6 +295,43 @@ describe("PageList component", () => {
     expect(blocks.filter((b) => b.type === "divider")).toHaveLength(1);
     // Notion-dark accent.
     expect(accent).toBe("#2F3437");
+  });
+
+  it("renders the editor even when no human-readable `edited` timestamp is given", () => {
+    const { blocks } = renderSlackMessage(
+      renderToIR(
+        <PageList
+          pages={[
+            {
+              title: "Runbook without a timestamp",
+              editedBy: "Alem",
+            },
+          ]}
+        />,
+      ),
+    );
+    const json = JSON.stringify(blocks);
+    // `editedBy` is an independent schema field from `edited` — it must not
+    // be silently dropped just because `edited` is absent.
+    expect(json).toContain("Alem");
+    expect(json).toContain("🕒 edited by Alem");
+  });
+
+  it("caps rendered pages at 15 and reports the overflow in the footer", () => {
+    const pages = Array.from({ length: 20 }, (_, i) => ({
+      title: `Page ${i + 1}`,
+    }));
+    const { blocks } = renderSlackMessage(
+      renderToIR(<PageList heading="Many" pages={pages} />),
+    );
+    const json = JSON.stringify(blocks);
+    expect(json).toContain("*Page 1*");
+    expect(json).toContain("*Page 15*");
+    expect(json).not.toContain("*Page 16*");
+    // Footer surfaces the overflow, mirroring issue-list's pattern.
+    expect(JSON.stringify(blocks[blocks.length - 1])).toContain(
+      "Showing 15 of 20 pages",
+    );
   });
 });
 

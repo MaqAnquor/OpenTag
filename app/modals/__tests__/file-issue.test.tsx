@@ -1,12 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
-import { renderToIR } from "@copilotkit/bot-ui";
+import { renderToIR } from "@copilotkit/channels-ui";
 import {
   FileIssueModal,
   fileIssueSubmit,
   issueFromValues,
   FILE_ISSUE_CALLBACK,
 } from "../file-issue.js";
-import type { BotNode } from "@copilotkit/bot-ui";
+import type { BotNode } from "@copilotkit/channels-ui";
+import { senderContext } from "../../sender-context.js";
 
 function tags(node: BotNode | unknown, acc: string[] = []): string[] {
   if (!node || typeof node !== "object") return acc;
@@ -112,6 +113,33 @@ describe("fileIssueSubmit", () => {
         user: { id: "U1" },
       } as never),
     ).resolves.toBeUndefined();
+  });
+
+  it("runs the agent with the interpolated prompt and sender context on a valid submit", async () => {
+    const runAgent = vi.fn(
+      (_input?: { prompt: string; context: unknown }) =>
+        new Promise<void>(() => {}),
+    );
+    const thread = { runAgent, platform: "slack" };
+    const user = { id: "U1", name: "Ada Lovelace", email: "ada@example.com" };
+    await fileIssueSubmit({
+      values: {
+        title: "Login broken",
+        description: "500 on submit",
+        type: "bug",
+        priority: "High",
+      },
+      thread,
+      user,
+    } as never);
+
+    expect(runAgent).toHaveBeenCalledTimes(1);
+    const call = runAgent.mock.calls[0]![0]!;
+    expect(call.prompt).toContain("- Title: Login broken");
+    expect(call.prompt).toContain("- Type: bug");
+    expect(call.prompt).toContain("- Priority: High");
+    expect(call.prompt).toContain("- Description: 500 on submit");
+    expect(call.context).toEqual(senderContext(user, thread.platform));
   });
 
   it("posts a failure message to the thread when runAgent rejects", async () => {

@@ -7,8 +7,8 @@
  * render-tool demo.
  */
 import { z } from "zod";
-import { Context } from "@copilotkit/bot-ui";
-import { defineBotTool } from "@copilotkit/bot";
+import { Context, Message } from "@copilotkit/channels-ui";
+import { defineBotTool } from "@copilotkit/channels";
 import { renderDiagram } from "../render/diagram.js";
 
 const schema = z.object({
@@ -44,12 +44,6 @@ export const renderDiagramTool = defineBotTool({
   async handler({ title, mermaid }, ctx) {
     try {
       const png = await renderDiagram(mermaid);
-      // Post the caption as a HEADER first, then the image (see render-chart:
-      // a file upload's message lands a beat after `postFile` resolves, so
-      // caption-first keeps a stable caption → image order).
-      await ctx.thread.post(
-        <Context>{`📐  *${title ?? "Diagram"}* — diagram below.`}</Context>,
-      );
       const res = await ctx.thread.postFile({
         bytes: png,
         filename: `${slug(title ?? "diagram")}.png`,
@@ -59,9 +53,24 @@ export const renderDiagramTool = defineBotTool({
       if (!res.ok) {
         return `Diagram render failed: ${res.error ?? "upload was rejected"}. Fix the Mermaid syntax and retry.`;
       }
+      // The image has landed — the tool has already succeeded from the
+      // agent's/user's point of view. Post the caption in its own guarded
+      // block so a caption-only failure (e.g. a flaky `thread.post`) never
+      // overrides the successful-upload result and triggers a duplicate
+      // re-render (see render-chart.tsx).
+      try {
+        await ctx.thread.post(
+          <Message>
+            <Context>{`📐  *${title ?? "Diagram"}*`}</Context>
+          </Message>,
+        );
+      } catch (captionError) {
+        console.error("[render-diagram] caption post failed", captionError);
+      }
       return "Rendered and posted the diagram image to the thread.";
     } catch (e) {
       // Surface the Mermaid parse error so the agent can repair the source.
+      console.error("[render-diagram] render/upload failed", e);
       return `Diagram render failed: ${(e as Error).message}. Fix the Mermaid syntax and retry.`;
     }
   },

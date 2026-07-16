@@ -1,24 +1,30 @@
 /**
- * Agent backend for the Slack triage assistant.
+ * Agent backend for the KiteBot triage assistant.
  *
- * This is the brain behind the Slack bridge: a single CopilotKit
+ * This is the brain behind the chat bridge: a single CopilotKit
  * `BuiltInAgent` (LLM + MCP) served over AG-UI by a `CopilotSseRuntime`.
  * It replaces the old vendored Python/LangGraph showcase backend — there
  * is no Python, no `langgraph dev`, no A2UI middleware. Everything is a
  * few dozen lines of TypeScript.
  *
+ * The bridge (`app/index.ts`) fronts this same backend with the
+ * platform-specific `@copilotkit/channels-*` packages (Slack, Discord,
+ * Telegram, WhatsApp) and cross-platform `@copilotkit/channels-ui`
+ * components, so this runtime itself has no platform-specific code.
+ *
  * What it does
  * ------------
  * The agent connects to **Linear** and **Notion** via their MCP servers
- * and acts as an on-call / triage assistant inside Slack: it pulls and
+ * and acts as an on-call / triage assistant inside chat: it pulls and
  * files Linear issues, finds Notion runbooks, and writes incident
  * threads up as Notion postmortems. The data access is entirely MCP —
  * the agent discovers the available tools (list/search/create issues,
  * search/create pages) from each server at runtime.
  *
- * The Slack-side primitives (read_thread, the confirm_write HITL picker,
- * the issue/page Block Kit components) are forwarded to the agent as
- * client-provided tools by the bridge on every run — see `app/index.ts`.
+ * The chat-side primitives (read_thread, the confirm_write HITL picker,
+ * the issue/page @copilotkit/channels-ui components) are forwarded to the
+ * agent as client-provided tools by the bridge on every run — see
+ * `app/index.ts`.
  *
  * Auth & deployment
  * -----------------
@@ -35,7 +41,7 @@
  * A server is only wired up when its credentials are present, so the bot
  * runs Linear-only, Notion-only, or both.
  *
- * Exposed route (the bridge's `AGENT_URL`):
+ * Exposed route (the bridge's `AGENT_URL`, shared by every platform):
  *   POST http://localhost:8200/api/copilotkit/agent/triage/run
  */
 import "dotenv/config";
@@ -106,18 +112,32 @@ const MCP_CONNECT_TIMEOUT_MS = 8000;
  * Connect one MCP client without ever taking the run down with it. A server
  * that's misconfigured (bad key), down (sidecar not running), or hanging must
  * NOT abort the turn — the agent should keep working with whatever else is
- * available. We race the connect against a timeout and swallow a late failure
- * so it can't surface as an unhandled rejection after we've moved on.
+ * available. We race the connect against a timeout.
+ *
+ * `connecting` can settle after we've already given up on it: a late
+ * rejection must not surface as an unhandled rejection, and a late
+ * *success* hands back a live `MCPClient` that nothing else will ever
+ * close — left alone that's a leaked MCP connection every time a server is
+ * merely slow instead of down. So once the timeout wins the race, we attach
+ * a follow-up that closes whatever client `connecting` eventually produces;
+ * closing is itself best-effort (swallow errors from `close()`) since there's
+ * no one left to hand a close failure to.
  */
 async function connectMcp(transport: McpHttpTransport) {
   const connecting = createMCPClient({ transport });
-  connecting.catch(() => {}); // late reject (post-timeout) must not crash the process
+  let timedOut = false;
+  connecting.then(
+    (client) => {
+      if (timedOut) void client.close().catch(() => {}); // leaked otherwise: nothing else closes it
+    },
+    () => {}, // late reject (post-timeout) must not crash the process
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`timed out after ${MCP_CONNECT_TIMEOUT_MS}ms`)),
-      MCP_CONNECT_TIMEOUT_MS,
-    );
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`timed out after ${MCP_CONNECT_TIMEOUT_MS}ms`));
+    }, MCP_CONNECT_TIMEOUT_MS);
     timer.unref?.(); // don't keep the process alive on the timer alone
   });
   try {
@@ -129,14 +149,14 @@ async function connectMcp(transport: McpHttpTransport) {
 
 if (mcpTransports().length === 0) {
   console.warn(
-    "[slack-runtime] No MCP servers configured. Set LINEAR_API_KEY and/or " +
+    "[runtime] No MCP servers configured. Set LINEAR_API_KEY and/or " +
       "NOTION_MCP_AUTH_TOKEN in .env — without them the bot can chat and " +
       "search the web but can't read or write Linear/Notion.",
   );
 }
 
 const SYSTEM_PROMPT = [
-  "You are an on-call triage assistant living in a Slack workspace. You help",
+  "You are KiteBot, an on-call triage assistant living in your team's chat workspace. You help",
   "an engineering team turn incident chatter into tracked work: you pull and",
   "file Linear issues, find Notion runbooks, and write incident threads up as",
   "Notion postmortems.",
@@ -164,7 +184,7 @@ const SYSTEM_PROMPT = [
   "  the ~15 most recent and note the rest (e.g. 'showing 15 of 39') instead of",
   "  dumping the whole backlog; a 39-row card is noise, not an answer.",
   "- Use get_issue for one issue; render it with issue_card.",
-  "- To act on a Slack conversation (e.g. 'write this thread up'), call the",
+  "- To act on a chat conversation (e.g. 'write this thread up'), call the",
   "  read_thread tool to fetch the messages first — never invent thread content.",
   "",
   "Files & visuals: uploaded files arrive in the message as content you can",
@@ -176,7 +196,7 @@ const SYSTEM_PROMPT = [
   "column order; set a column's align to 'right' for numeric columns). When",
   "asked to diagram a flow/architecture/timeline, call render_diagram with",
   "Mermaid source. render_chart and render_diagram post an image; render_table",
-  "posts a Slack table. If render_diagram returns an error, fix the Mermaid and",
+  "posts a table. If render_diagram returns an error, fix the Mermaid and",
   "retry. These are read/reply actions — no confirm_write needed.",
   "- render_chart / render_diagram post a TITLED image themselves (a caption",
   "  header followed by the image). Do NOT narrate the act with a separate",
@@ -187,7 +207,7 @@ const SYSTEM_PROMPT = [
   "- If more than one file is in the thread and the request doesn't make clear",
   "  which one to use, ASK which file (list them by name) instead of guessing.",
   "",
-  "Acting per-user: each turn's context names the Requesting Slack user, with",
+  "Acting per-user: each turn's context names the requesting user, with",
   'their name and email. When someone says "my issues", "assigned to me", or',
   '"file this for me", use that email/name to find their Linear user, then:',
   "- Querying: filter Linear by that person (assignee), so each user gets THEIR",
@@ -239,8 +259,11 @@ const SYSTEM_PROMPT = [
 // agent runs on the OpenAI Responses API via TanStack AI's `openaiText`
 // adapter. Override the model with AGENT_MODEL (a bare OpenAI id, or
 // "openai/<id>" — the prefix is stripped); defaults to gpt-5.5. The cast is
-// needed because AGENT_MODEL is dynamic and `openaiText` types its argument to
-// the known OpenAI model literals.
+// needed because AGENT_MODEL is a dynamic (env-sourced) string while
+// `openaiText` types its argument to the known OpenAI model literal union —
+// the cast is a trapdoor around that check, so the env value is NOT validated
+// against the union; an unsupported/misspelled model id will only surface as
+// an OpenAI API error at request time, not a compile-time or startup check.
 const model = (process.env["AGENT_MODEL"] ?? "openai/gpt-5.5").replace(
   /^openai\//,
   "",
@@ -276,9 +299,13 @@ const agent = new BuiltInAgent({
         clients.push(result.value);
       } else {
         unavailable.push(transports[i]!.name);
+        const msg =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
         console.error(
-          `[slack-runtime] MCP "${transports[i]!.name}" unavailable this turn:`,
-          (result.reason as Error)?.message ?? result.reason,
+          `[runtime] MCP "${transports[i]!.name}" unavailable this turn:`,
+          msg,
         );
       }
     });
@@ -293,7 +320,7 @@ const agent = new BuiltInAgent({
         ? `\n\nDATA SOURCE STATUS: ${unavailable.join(" and ")} ${isAre} ` +
           `temporarily UNAVAILABLE this turn (connection failed), so ${itsTheir} ` +
           `tools are not loaded. Everything else — web search, rendering cards/` +
-          `charts, reading the Slack thread — still works normally. ONLY if the ` +
+          `charts, reading the thread — still works normally. ONLY if the ` +
           `user asks for something that needs ${unavailable.join(" or ")}, tell ` +
           `them that source is temporarily unreachable and to try again shortly; ` +
           `never invent data or claim a write/read succeeded.`
@@ -308,10 +335,7 @@ const agent = new BuiltInAgent({
       // confirm_write HITL) forwarded on every run — passed as client-side
       // tools so the model can call them and the bot renders/gates them via
       // the AG-UI client-tool round-trip. MCP tools come in via `mcp` below.
-      tools: [
-        webSearchTool({ type: "web_search" }),
-        ...(clientTools as never[]),
-      ],
+      tools: [webSearchTool({ type: "web_search" }), ...clientTools],
       ...(clients.length > 0 ? { mcp: { clients } } : {}),
       // TanStack AI needs the full AbortController (not just the signal).
       abortController: ctx.abortController,
@@ -329,17 +353,23 @@ const listener = createCopilotNodeListener({
   cors: true,
 });
 
-const port = Number(process.env["PORT"] ?? 8200);
+const rawPort = process.env["PORT"];
+const port =
+  rawPort && rawPort.trim() !== "" ? Number(rawPort) : 8200;
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  console.error(`Invalid PORT: "${rawPort}" is not a valid port number`);
+  process.exit(1);
+}
 createServer(listener).listen(port, () => {
   console.log(
-    `[slack-runtime] listening on http://localhost:${port}/api/copilotkit/agent/triage/run`,
+    `[runtime] listening on http://localhost:${port}/api/copilotkit/agent/triage/run`,
   );
   const connected = [
     process.env["LINEAR_API_KEY"] ? "Linear" : null,
     process.env["NOTION_MCP_AUTH_TOKEN"] ? "Notion" : null,
   ].filter(Boolean);
   console.log(
-    `[slack-runtime] agent "triage" ready · MCP: ${
+    `[runtime] agent "triage" ready · MCP: ${
       connected.length ? connected.join(", ") : "none"
     }`,
   );

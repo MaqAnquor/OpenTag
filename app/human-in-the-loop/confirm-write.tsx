@@ -22,8 +22,8 @@ import {
   Context,
   Actions,
   Button,
-} from "@copilotkit/bot-ui";
-import type { InteractionContext } from "@copilotkit/bot-ui";
+} from "@copilotkit/channels-ui";
+import type { InteractionContext } from "@copilotkit/channels-ui";
 
 export interface ConfirmWriteProps {
   /** Short imperative title of the write, e.g. 'Create Linear issue'. */
@@ -43,13 +43,17 @@ export function ConfirmWrite({ action, detail }: ConfirmWriteProps) {
           value={{ confirmed: true }}
           style="primary"
           onClick={async ({ thread, message }: InteractionContext) => {
-            await thread.update(
-              message.ref,
-              <Message accent="#27AE60">
-                <Header>{`✅ ${action}`}</Header>
-                <Context>{"✅  Approved — writing now."}</Context>
-              </Message>,
-            );
+            try {
+              await thread.update(
+                message.ref,
+                <Message accent="#27AE60">
+                  <Header>{`✅ ${action}`}</Header>
+                  <Context>{"✅  Approved — writing now."}</Context>
+                </Message>,
+              );
+            } catch (err) {
+              console.error("[confirm-write] onClick failed", err);
+            }
           }}
         >
           Create
@@ -58,13 +62,17 @@ export function ConfirmWrite({ action, detail }: ConfirmWriteProps) {
           value={{ confirmed: false }}
           style="danger"
           onClick={async ({ thread, message }: InteractionContext) => {
-            await thread.update(
-              message.ref,
-              <Message accent="#EB5757">
-                <Header>{`🚫 ${action}`}</Header>
-                <Context>{"🚫  Declined — nothing was written."}</Context>
-              </Message>,
-            );
+            try {
+              await thread.update(
+                message.ref,
+                <Message accent="#EB5757">
+                  <Header>{`🚫 ${action}`}</Header>
+                  <Context>{"🚫  Declined — nothing was written."}</Context>
+                </Message>,
+              );
+            } catch (err) {
+              console.error("[confirm-write] onClick failed", err);
+            }
           }}
         >
           Cancel
