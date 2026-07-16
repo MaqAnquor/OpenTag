@@ -50,6 +50,22 @@ if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
 }
 const port = String(portNumber);
 
+// Host the sidecar binds to. Defaults to loopback for local dev (matches the
+// upstream server's own default). On Railway the `notion-mcp` service sets
+// NOTION_MCP_HOST=:: so the sidecar listens on all interfaces and is reachable
+// over Railway's (IPv6) private network — without it the server binds 127.0.0.1
+// and the agent's cross-container connection is refused. Validated because it's
+// passed to a `shell: true` spawn below.
+const rawHost = process.env["NOTION_MCP_HOST"];
+if (rawHost !== undefined && !/^[A-Za-z0-9.:_-]+$/.test(rawHost)) {
+  console.error(
+    `[notion-mcp] NOTION_MCP_HOST must be a hostname or IP address (letters, ` +
+      `digits, ".", ":", "_", "-"), got: ${JSON.stringify(rawHost)}`,
+  );
+  process.exit(1);
+}
+const host = rawHost ?? "127.0.0.1";
+
 // Notion's REST API requires a `Notion-Version` header. Authenticate via
 // OPENAPI_MCP_HEADERS (carrying BOTH Authorization and Notion-Version) rather
 // than NOTION_TOKEN: when NOTION_TOKEN is set the server builds its own auth
@@ -79,6 +95,8 @@ const child = spawn(
     "@notionhq/notion-mcp-server",
     "--transport",
     "http",
+    "--host",
+    host,
     "--port",
     port,
   ],

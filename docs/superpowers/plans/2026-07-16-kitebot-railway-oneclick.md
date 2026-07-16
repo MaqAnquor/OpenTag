@@ -8,10 +8,25 @@
 
 **Tech Stack:** Railway IaC (`railway` npm SDK v3.5.7, `railway/iac`), TypeScript, nixpacks (agent + node services), the existing `pnpm channel` / `pnpm notion-mcp` scripts and the `agent/` uv project.
 
+> **Implementation note (updated after code review).** The shipped implementation diverged from the
+> first-draft snippets below; the code blocks in this plan have been updated to match what landed.
+> Key changes made during CR, all reflected in the authoritative [`.railway/railway.ts`](../../../.railway/railway.ts):
+> - Services reached over private networking bind `::` (not `0.0.0.0`) — Railway private DNS is IPv6.
+>   The `notion-mcp` sidecar's launcher (`scripts/start-notion-mcp.ts`) gained a `NOTION_MCP_HOST` arg
+>   (default `127.0.0.1`) which the IaC sets to `::`.
+> - Ports are pinned (`agent` `PORT=8123`, `notion-mcp` `NOTION_MCP_PORT=3001`) and dialed via
+>   `${{svc.<VAR>}}` so listen/dial ports always agree.
+> - **No `agent/railway.toml`** — Railway forbids a service being managed by both IaC and
+>   config-as-code, so the agent's build+deploy config lives entirely in the IaC (Task 2 changed).
+> - `OPENAI_MODEL` is **not** managed by the IaC (the agent defaults to `gpt-5.5`), so a UI override
+>   survives `config apply`. `NOTION_MCP_AUTH_TOKEN` is set once on `notion-mcp` and referenced by the
+>   agent. `tsx` + `dotenv` + `@notionhq/notion-mcp-server` moved to `dependencies` (runtime-required).
+
 ## Global Constraints
 - Secrets are NEVER written into `.railway/railway.ts` or any committed file — declared via `preserve()` and set by the deployer in Railway. Only non-secret wiring/defaults are literal.
 - Reference-variable wiring uses literal Railway `${{service.VAR}}` strings in env values (resolved by Railway at deploy) — service names: `agent`, `notion-mcp`, `channel`.
-- Model default stays `gpt-5.5`; channel name default `kitebot` (consistent with Phases 1–2).
+- Model default stays `gpt-5.5` (via the agent's own default, not pinned in the IaC — so it stays
+  overridable); channel name default `kitebot` (consistent with Phases 1–2).
 - Do not disturb the Phase-1/2 gates: `pnpm check-types`, `pnpm test`, and `agent` pytest must stay green. `.railway/` is outside the root tsconfig `include`, so it won't affect `pnpm check-types`.
 
 ---
@@ -25,50 +40,60 @@
 **Interfaces:**
 - Produces: a `.railway/railway.ts` that `railway config plan/apply` consumes; 3 services named `agent`, `notion-mcp`, `channel`.
 
-- [ ] **Step 1: Add the `railway` SDK devDependency**
+- [ ] **Step 1: Add the `railway` SDK devDependency (and reclassify runtime deps)**
 
 Run: `pnpm add -D railway@^3.5.7`
 Expected: adds `railway` to `devDependencies`; `pnpm-lock.yaml` updates; resolves cleanly.
+Also move `tsx`, `dotenv`, and `@notionhq/notion-mcp-server` from `devDependencies` to
+`dependencies` — the `channel` and `notion-mcp` services run them at runtime (`tsx app/managed.ts`,
+`import "dotenv/config"`, and the sidecar binary), so a production-only install must include them.
 
-- [ ] **Step 2: Create `.railway/railway.ts`**
+- [ ] **Step 2: Create `.railway/railway.ts`** (final, as shipped)
 
 ```ts
 import { defineRailway, github, preserve, project, service } from "railway/iac";
 
-// KiteBot on CopilotKit Intelligence — one-click Railway topology.
-// Three services build from this repo; the Python agent uses rootDirectory "agent".
-// Inter-service URLs use Railway reference variables (${{svc.VAR}}), resolved at
-// deploy over private networking. SECRETS are declared with preserve() so applying
-// never clobbers deployer-set values — set their actual values in the Railway UI
-// (see README "Deploy to Railway").
+// KiteBot on CopilotKit Intelligence — one-click Railway topology. See the file's
+// own header for the two topology invariants (pinned ports; bind :: for private
+// networking). SECRETS are declared with preserve(); non-secret wiring is literal.
 const REPO = "CopilotKit/OpenTag";
 
 export default defineRailway(() => {
-  // Notion MCP sidecar — streamable-HTTP MCP server on $PORT.
+  // Notion MCP sidecar. Pin NOTION_MCP_PORT (the launcher binds it, not $PORT) and
+  // NOTION_MCP_HOST=:: (the upstream server defaults to 127.0.0.1, unreachable
+  // across containers). Optional feature; REQUIRES its two tokens if deployed.
   const notionMcp = service("notion-mcp", {
     source: github(REPO),
     start: "pnpm notion-mcp",
+    deploy: { restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 5 },
     env: {
-      // secrets (set in Railway UI):
+      NOTION_MCP_PORT: "3001",
+      NOTION_MCP_HOST: "::",
       NOTION_TOKEN: preserve(),
       NOTION_MCP_AUTH_TOKEN: preserve(),
     },
   });
 
-  // Python deep-research agent — deepagents over AG-UI (uvicorn, /health).
+  // Python deep-research agent. Build+deploy config lives here (single source of
+  // truth) — NO agent/railway.toml. Bind :: for private networking; pin PORT.
   const agent = service("agent", {
     source: github(REPO, { rootDirectory: "agent" }),
-    start: "uvicorn main:app --host 0.0.0.0 --port $PORT",
-    healthcheck: "/health",
+    build: { builder: "NIXPACKS" },
+    deploy: {
+      startCommand: "uvicorn main:app --host :: --port ${PORT:-8123}",
+      healthcheckPath: "/health",
+      healthcheckTimeout: 300,
+      restartPolicyType: "ON_FAILURE",
+      restartPolicyMaxRetries: 5,
+    },
     env: {
-      OPENAI_MODEL: "gpt-5.5",
-      // internal research source (optional Notion), wired to the sidecar:
+      PORT: "8123",
+      // OPENAI_MODEL intentionally NOT set (agent defaults to gpt-5.5; stays overridable).
       NOTION_MCP_URL:
-        "http://${{notion-mcp.RAILWAY_PRIVATE_DOMAIN}}:${{notion-mcp.PORT}}/mcp",
-      // secrets (set in Railway UI): OPENAI_API_KEY required; others optional:
+        "http://${{notion-mcp.RAILWAY_PRIVATE_DOMAIN}}:${{notion-mcp.NOTION_MCP_PORT}}/mcp",
+      NOTION_MCP_AUTH_TOKEN: "${{notion-mcp.NOTION_MCP_AUTH_TOKEN}}",
       OPENAI_API_KEY: preserve(),
       TAVILY_API_KEY: preserve(),
-      NOTION_MCP_AUTH_TOKEN: preserve(),
       LINEAR_API_KEY: preserve(),
     },
   });
@@ -78,10 +103,8 @@ export default defineRailway(() => {
     source: github(REPO),
     start: "pnpm channel",
     env: {
-      // brain: points at the agent service over private networking:
       AGENT_URL: "http://${{agent.RAILWAY_PRIVATE_DOMAIN}}:${{agent.PORT}}/",
       INTELLIGENCE_CHANNEL_NAME: "kitebot",
-      // secrets (set in Railway UI):
       INTELLIGENCE_GATEWAY_WS_URL: preserve(),
       INTELLIGENCE_API_KEY: preserve(),
       INTELLIGENCE_ORG_ID: preserve(),
@@ -113,38 +136,38 @@ git commit -m "feat(deploy): Railway IaC — agent + notion-mcp + channel servic
 
 ---
 
-## Task 2: Per-service build config for the agent
+## Task 2: Agent build/deploy config (in the IaC) + sidecar host binding
+
+> **Changed during CR.** The original plan created `agent/railway.toml`. That is wrong: Railway
+> forbids a service being managed by both IaC and config-as-code, and `railway config plan` errors
+> when it finds a `railway.toml` for an IaC-managed service. So the agent's build+deploy config
+> lives entirely in `.railway/railway.ts` (Task 1's `build` + `deploy` blocks), and there is **no**
+> `agent/railway.toml`.
 
 **Files:**
-- Create: `agent/railway.toml`
+- Modify: `scripts/start-notion-mcp.ts` (add `NOTION_MCP_HOST` so the sidecar can bind `::` on Railway)
 
 **Interfaces:**
-- Consumes: nothing. Produces: a per-service config Railway reads if a deployer configures the `agent` service with config path `/agent/railway.toml` instead of (or alongside) IaC.
+- Consumes: the `agent` service's `build`/`deploy` config declared in Task 1. Produces: a sidecar
+  launcher that binds a configurable host.
 
-- [ ] **Step 1: Create `agent/railway.toml`** (patterned on the deep-agents showcase; nixpacks builds the `uv` project)
+- [ ] **Step 1: Add a `NOTION_MCP_HOST` arg to `scripts/start-notion-mcp.ts`**
 
-```toml
-[build]
-builder = "nixpacks"
+Validate it like the existing `NOTION_MCP_PORT` (it's passed to a `shell: true` spawn), default to
+`127.0.0.1` (preserves local behavior = the upstream server's own default), and pass it as
+`--host <host>` to the spawned `@notionhq/notion-mcp-server`. The IaC's `notion-mcp` service sets
+`NOTION_MCP_HOST: "::"` so on Railway the sidecar is reachable over the IPv6 private network.
 
-[deploy]
-startCommand = "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8123}"
-healthcheckPath = "/health"
-healthcheckTimeout = 300
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 5
-```
+- [ ] **Step 2: Confirm no `agent/railway.toml` exists**
 
-- [ ] **Step 2: Sanity-check TOML validity**
+Run: `test ! -e agent/railway.toml && echo "no toml (correct)"`
+Expected: `no toml (correct)`.
 
-Run: `pnpm exec node -e "const fs=require('fs');const s=fs.readFileSync('agent/railway.toml','utf8');if(!/builder\s*=\s*\"nixpacks\"/.test(s)||!/healthcheckPath\s*=\s*\"\/health\"/.test(s))throw new Error('bad toml');console.log('railway.toml ok')"`
-Expected: `railway.toml ok`.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit** (folded into the CR fix commit)
 
 ```bash
-git add agent/railway.toml
-git commit -m "feat(deploy): agent/railway.toml (nixpacks + uvicorn + /health)"
+git add scripts/start-notion-mcp.ts
+git commit -m "fix(deploy): sidecar binds NOTION_MCP_HOST (:: on Railway)"
 ```
 
 ---
@@ -169,9 +192,9 @@ Insert a section covering, accurately to the 3 services:
   railway config apply    # provisions agent + notion-mcp + channel from .railway/railway.ts
   ```
 - **Set the secrets** (Railway → each service → Variables) — grouped checklist:
-  - `agent`: `OPENAI_API_KEY` (required), `TAVILY_API_KEY` (optional — enables web research), `NOTION_MCP_AUTH_TOKEN` (must match `notion-mcp`), `LINEAR_API_KEY` (optional).
-  - `notion-mcp`: `NOTION_TOKEN`, `NOTION_MCP_AUTH_TOKEN` (same value as `agent`).
-  - `channel`: `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`, `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID` (from your CopilotKit Intelligence project/channel). `INTELLIGENCE_CHANNEL_NAME` defaults to `kitebot`.
+  - `agent`: `OPENAI_API_KEY` (required), `TAVILY_API_KEY` (optional — enables web research), `LINEAR_API_KEY` (optional). (`NOTION_MCP_AUTH_TOKEN` is referenced from `notion-mcp`, not set here.)
+  - `notion-mcp`: `NOTION_TOKEN`, `NOTION_MCP_AUTH_TOKEN` (both required for the service to start; the agent reads the auth token via a reference variable). To skip Notion, remove this service from `resources` and the agent's `NOTION_MCP_URL`/`NOTION_MCP_AUTH_TOKEN`.
+  - `channel`: `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`, `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID` (from your CopilotKit Intelligence project/channel). `INTELLIGENCE_CHANNEL_NAME` defaults to `kitebot`. The agent's `OPENAI_MODEL` (default `gpt-5.5`) can be overridden in the `agent` service's Variables.
 - **"Deploy on Railway" button (optional):** to get a literal one-click button, publish this repo as a Railway template (Railway dashboard → Templates → New, or `railway` template flow) — that requires your Railway account — then add the generated button:
   `[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/<your-template-id>)`
 - **Note:** applying the IaC creates the services + wiring; KiteBot goes live only once the secrets are set and the channel connects (dashboard flips *Waiting for runtime → live*).

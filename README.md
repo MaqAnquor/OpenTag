@@ -58,7 +58,7 @@ OpenTag is a thin layer on top of a handful of CopilotKit packages. The `pnpm in
 | Package | When you need it |
 | --- | --- |
 | [`@copilotkit/channels-discord`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-discord) · [`-telegram`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-telegram) · [`-whatsapp`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-whatsapp) | Running on a platform other than Slack — one adapter per platform. |
-| [`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence) | Runs the bot over the CopilotKit Intelligence Realtime Gateway instead of holding platform tokens — see `app/managed.ts`. |
+| [`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence) | Runs the bot over the CopilotKit Intelligence Realtime Gateway instead of holding platform tokens — see `app/managed.ts`. **Required for the recommended `pnpm channel` (Intelligence Gateway) mode**; omit it only if you run self-hosted mode exclusively. |
 
 **1. Create a Slack app.** At [api.slack.com/apps](https://api.slack.com/apps?new_app=1) →
 *From a manifest* → paste [`slack-app-manifest.yaml`](./slack-app-manifest.yaml). Install it,
@@ -70,7 +70,8 @@ CopilotKit Intelligence project for Intelligence mode. Step-by-step in
 **2. Set your secrets** in `.env` (`cp .env.example .env`):
 
 ```bash
-OPENAI_API_KEY=sk-...      # the agent runs on OpenAI's Responses API (required for web search)
+OPENAI_API_KEY=sk-...      # the TS runtime (runtime.ts) uses OpenAI's Responses API for web search;
+                           # the Python agent/ uses Tavily instead (see "Deep research" below)
 
 # Self-hosted mode:
 SLACK_BOT_TOKEN=xoxb-...
@@ -137,7 +138,7 @@ To run it:
 ```bash
 cd agent && uv sync   # requires uv: https://docs.astral.sh/uv/
 pnpm agent            # cd agent && uv run python main.py — serves over AG-UI on :8123
-                       # (port from SERVER_PORT/PORT env, default 8123)
+                       # (port from PORT/SERVER_PORT env, default 8123)
 ```
 
 Then point the bot at it instead of `runtime.ts` by setting in `.env`:
@@ -180,15 +181,21 @@ railway config apply         # provisions agent + notion-mcp + channel from .rai
 `preserve()` and never stores values — you fill them in:
 
 - **`agent`** — `OPENAI_API_KEY` (required); `TAVILY_API_KEY` (optional — enables web research);
-  `NOTION_MCP_AUTH_TOKEN` (must match `notion-mcp`); `LINEAR_API_KEY` (optional).
-- **`notion-mcp`** — `NOTION_TOKEN`; `NOTION_MCP_AUTH_TOKEN` (same value as `agent`).
+  `LINEAR_API_KEY` (optional). (`NOTION_MCP_AUTH_TOKEN` is **not** set here — the agent references
+  it from `notion-mcp`, so you set it once, below.)
+- **`notion-mcp`** — `NOTION_TOKEN` and `NOTION_MCP_AUTH_TOKEN` (any strong string; the agent
+  reads the same value via a reference variable). **Both are required** for this service to
+  start — its launcher exits if either is missing. Don't want Notion? Remove the `notion-mcp`
+  service from `resources` in [`.railway/railway.ts`](./.railway/railway.ts) and delete the
+  agent's `NOTION_MCP_URL` / `NOTION_MCP_AUTH_TOKEN` lines; the agent still runs (chat, UI, and —
+  with `TAVILY_API_KEY` — web research).
 - **`channel`** — `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`,
   `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID` (from your CopilotKit Intelligence
   project + channel). `INTELLIGENCE_CHANNEL_NAME` defaults to `kitebot`.
 
-Non-secret config (the agent's `OPENAI_MODEL`, defaulting to `gpt-5.5`, and the inter-service
-URLs/ports) is set for you in [`.railway/railway.ts`](./.railway/railway.ts) — override
-`OPENAI_MODEL` in the `agent` service's *Variables* if you want a different model.
+The inter-service URLs/ports are wired for you in [`.railway/railway.ts`](./.railway/railway.ts).
+The agent's model defaults to `gpt-5.5`; to use a different model, set `OPENAI_MODEL` in the
+`agent` service's *Variables* (the IaC doesn't manage it, so your choice survives re-applies).
 
 Applying the config creates the services and their wiring; **KiteBot goes live only once the
 secrets are set and the `channel` service connects** — that's when your Intelligence dashboard

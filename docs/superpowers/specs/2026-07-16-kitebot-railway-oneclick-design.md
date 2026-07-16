@@ -69,14 +69,19 @@ declares/preserves them, never contains values):**
   with the three `service(...)` definitions, `rootDirectory`, build/start/health, the
   reference-variable wiring above, non-secret env, and secrets via `preserve()` (so applying
   doesn't clobber deployer-set values).
-- **`agent/railway.toml`** (optional per-service belt) — nixpacks + uvicorn + `/health`,
-  patterned on the showcase, in case a deployer uses per-service config instead of IaC.
+- **`scripts/start-notion-mcp.ts`** (modified) — a `NOTION_MCP_HOST` arg (default `127.0.0.1`,
+  set to `::` by the IaC) so the sidecar binds all interfaces and is reachable over Railway's
+  IPv6 private network. There is **no** `agent/railway.toml`: Railway forbids a service being
+  managed by both IaC and config-as-code, so the agent's build+deploy config lives only in
+  `.railway/railway.ts`.
 - **`README.md` "Deploy to Railway"** — two documented paths: (a) `railway login && railway
   link && railway config apply` (IaC), and (b) publish a Railway template from the repo → get
   a "Deploy on Railway" button (steps + the button markdown, noting it needs the deployer's
   Railway account). Plus the full **secrets checklist** grouped by service.
-- **`railway` devDependency** (or documented `npx`) so `.railway/railway.ts` type-resolves and
-  `railway config plan` works.
+- **Dependency changes in `package.json`** — add the `railway` devDependency (so
+  `.railway/railway.ts` type-resolves and `railway config plan` works) and move `tsx`, `dotenv`,
+  and `@notionhq/notion-mcp-server` to `dependencies` (the deployed `channel`/`notion-mcp`
+  services run them, so a production-only install must include them).
 
 ## Verification (definition of done)
 

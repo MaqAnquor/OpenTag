@@ -7,22 +7,40 @@ import { defineRailway, github, preserve, project, service } from "railway/iac";
 // never clobbers deployer-set values — set their actual values in the Railway UI
 // (see README "Deploy to Railway").
 //
-// Ports are pinned as explicit service variables (NOT left to Railway's
-// auto-injected $PORT) so each service's listen port and the ${{svc.PORT}} its
-// peers dial always agree — see the notion-mcp and agent notes below.
+// Two topology invariants this file encodes:
+//   1. Ports are pinned as explicit service variables (NOT left to Railway's
+//      auto-injected $PORT) so each service's listen port and the ${{svc.PORT}}
+//      its peers dial always agree.
+//   2. Services reached over Railway private networking must bind :: (all
+//      interfaces) — private DNS (RAILWAY_PRIVATE_DOMAIN) resolves to IPv6, and
+//      legacy environments are IPv6-only. A service bound to 127.0.0.1/0.0.0.0
+//      is unreachable by its peers.
 const REPO = "CopilotKit/OpenTag";
 
 export default defineRailway(() => {
   // Notion MCP sidecar — streamable-HTTP MCP server. Its launcher
   // (scripts/start-notion-mcp.ts) binds NOTION_MCP_PORT (default 3001) and does
   // NOT read Railway's injected $PORT, so we pin NOTION_MCP_PORT here and have
-  // the agent dial that same variable — otherwise ${{notion-mcp.PORT}} would
-  // point at a port nothing listens on.
+  // the agent dial that same variable. We also set NOTION_MCP_HOST=:: so the
+  // sidecar binds all interfaces (its upstream default is 127.0.0.1, which is
+  // unreachable across containers on the private network).
+  //
+  // Notion is an OPTIONAL research source: the agent runs fine (chat + UI + web
+  // research) without it and drops the Notion tools if this sidecar is
+  // unreachable. But if you deploy this service it REQUIRES NOTION_TOKEN and
+  // NOTION_MCP_AUTH_TOKEN — its launcher exits non-zero without them. To skip
+  // Notion entirely, remove this service from `resources` below and delete the
+  // agent's NOTION_MCP_URL / NOTION_MCP_AUTH_TOKEN wiring.
   const notionMcp = service("notion-mcp", {
     source: github(REPO),
     start: "pnpm notion-mcp",
+    deploy: {
+      restartPolicyType: "ON_FAILURE",
+      restartPolicyMaxRetries: 5,
+    },
     env: {
       NOTION_MCP_PORT: "3001",
+      NOTION_MCP_HOST: "::",
       // secrets (set in Railway UI):
       NOTION_TOKEN: preserve(),
       NOTION_MCP_AUTH_TOKEN: preserve(),
@@ -37,10 +55,12 @@ export default defineRailway(() => {
     source: github(REPO, { rootDirectory: "agent" }),
     build: { builder: "NIXPACKS" },
     deploy: {
-      // agent/main.py reads PORT first (default 8123); bind :: so the service is
-      // reachable over Railway private networking on BOTH IPv4 and IPv6 (legacy
-      // environments are IPv6-only). The ${PORT:-8123} fallback keeps the bind
-      // valid even if PORT is ever unset; PORT is pinned in env below.
+      // Bind :: so the agent is reachable over Railway private networking (see
+      // invariant 2 above). The Railway startCommand runs `uvicorn main:app`
+      // directly, so agent/main.py's own __main__ port logic does NOT run here —
+      // the port comes solely from this --port arg. The ${PORT:-8123} fallback
+      // keeps the bind valid even if PORT were unset; PORT is pinned in env below
+      // so this and ${{agent.PORT}} (dialed by channel) always agree.
       startCommand: "uvicorn main:app --host :: --port ${PORT:-8123}",
       healthcheckPath: "/health",
       healthcheckTimeout: 300,
@@ -50,15 +70,21 @@ export default defineRailway(() => {
     env: {
       // Pin PORT so uvicorn's bind and ${{agent.PORT}} (dialed by channel) agree.
       PORT: "8123",
-      OPENAI_MODEL: "gpt-5.5",
       // internal research source (optional Notion), wired to the sidecar on its
-      // pinned NOTION_MCP_PORT over private networking:
+      // pinned NOTION_MCP_PORT over private networking. The shared bearer is
+      // referenced from notion-mcp so it has a single source of truth — set
+      // NOTION_MCP_AUTH_TOKEN once, on the notion-mcp service.
       NOTION_MCP_URL:
         "http://${{notion-mcp.RAILWAY_PRIVATE_DOMAIN}}:${{notion-mcp.NOTION_MCP_PORT}}/mcp",
+      NOTION_MCP_AUTH_TOKEN: "${{notion-mcp.NOTION_MCP_AUTH_TOKEN}}",
+      // OPENAI_MODEL is intentionally NOT set here: the agent defaults to
+      // gpt-5.5 (agent/tools.py), and leaving it unmanaged means a deployer can
+      // override it in the Railway UI without a later `config apply` clobbering
+      // the change. Set OPENAI_MODEL in the agent service's Variables to change it.
+      //
       // secrets (set in Railway UI): OPENAI_API_KEY required; others optional:
       OPENAI_API_KEY: preserve(),
       TAVILY_API_KEY: preserve(),
-      NOTION_MCP_AUTH_TOKEN: preserve(),
       LINEAR_API_KEY: preserve(),
     },
   });
