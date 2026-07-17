@@ -23,11 +23,23 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Enable CORS for frontend communication
-# Using "*" for demo purposes - allows any origin including localhost and Railway deployments
+# Enable CORS for frontend communication. Defaults to "*" (any origin) for
+# local/demo use; on Railway the agent is reached only over private networking
+# by the channel service, so this is not a credential vector (allow_credentials
+# is False). Set CORS_ALLOW_ORIGINS to a comma-separated allowlist to lock it
+# down if the service is ever exposed publicly.
+# Trailing `or ["*"]` so ANY blank CORS_ALLOW_ORIGINS — unset, empty, or a
+# whitespace/comma-only value a deployer left while "resetting" — falls back to
+# the permissive default rather than an empty allowlist that would block every
+# origin.
+_cors_origins = [
+    o.strip()
+    for o in (os.getenv("CORS_ALLOW_ORIGINS") or "*").split(",")
+    if o.strip()
+] or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,7 +78,7 @@ try:
 
     print("[SERVER] Deep Research Agent registered at /")
 except Exception as e:
-    print(f"[ERROR] Failed to build agent: {e}")
+    print(f"[ERROR] Failed to build agent: {e}", file=sys.stderr)
     raise
 
 
@@ -74,16 +86,26 @@ def main():
     """Run the server with uvicorn"""
     import uvicorn
 
-    host = os.getenv("SERVER_HOST", "0.0.0.0")
-    # Honor Railway's injected $PORT first, falling back to SERVER_PORT for local dev
-    raw_port = os.getenv("PORT") or os.getenv("SERVER_PORT", "8123")
+    # Local-dev default 0.0.0.0 (IPv4 all-interfaces) — accepts 127.0.0.1/
+    # localhost clients on every platform. This __main__ path runs only for
+    # local `pnpm agent`; on Railway the startCommand binds `--host ::` for the
+    # IPv6 private network, so this default does not affect the deploy. (Avoid
+    # defaulting to :: here: on macOS/BSD a `::` socket may not accept IPv4, so
+    # a local client dialing 127.0.0.1 could be refused.) Override with SERVER_HOST.
+    host = os.getenv("SERVER_HOST") or "0.0.0.0"
+    # Local-dev entrypoint only: on Railway the startCommand runs `uvicorn
+    # main:app` directly, so this block is bypassed and the port comes from the
+    # startCommand's `--port ${PORT:-8123}`. Prefer PORT then SERVER_PORT here so
+    # `pnpm agent` matches that Railway behavior.
+    raw_port = os.getenv("PORT") or os.getenv("SERVER_PORT") or "8123"
     try:
         port = int(raw_port)
         if not (1 <= port <= 65535):
             raise ValueError("out of range")
     except ValueError:
         print(
-            f'[ERROR] Invalid PORT/SERVER_PORT: "{raw_port}" — must be an integer between 1 and 65535'
+            f'[ERROR] Invalid PORT/SERVER_PORT: "{raw_port}" — must be an integer between 1 and 65535',
+            file=sys.stderr,
         )
         sys.exit(1)
     reload = os.getenv("AGENT_RELOAD", "").lower() in ("1", "true", "yes")

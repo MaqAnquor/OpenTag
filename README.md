@@ -58,7 +58,7 @@ OpenTag is a thin layer on top of a handful of CopilotKit packages. The `pnpm in
 | Package | When you need it |
 | --- | --- |
 | [`@copilotkit/channels-discord`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-discord) · [`-telegram`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-telegram) · [`-whatsapp`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-whatsapp) | Running on a platform other than Slack — one adapter per platform. |
-| [`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence) | Runs the bot over the CopilotKit Intelligence Realtime Gateway instead of holding platform tokens — see `app/managed.ts`. |
+| [`@copilotkit/channels-intelligence`](https://github.com/CopilotKit/CopilotKit/tree/main/packages/channels-intelligence) | Runs the bot over the CopilotKit Intelligence Realtime Gateway instead of holding platform tokens — see `app/managed.ts`. **Required for the recommended `pnpm channel` (Intelligence Gateway) mode**; omit it only if you run self-hosted mode exclusively. |
 
 **1. Create a Slack app.** At [api.slack.com/apps](https://api.slack.com/apps?new_app=1) →
 *From a manifest* → paste [`slack-app-manifest.yaml`](./slack-app-manifest.yaml). Install it,
@@ -70,7 +70,11 @@ CopilotKit Intelligence project for Intelligence mode. Step-by-step in
 **2. Set your secrets** in `.env` (`cp .env.example .env`):
 
 ```bash
-OPENAI_API_KEY=sk-...      # the agent runs on OpenAI's Responses API (required for web search)
+OPENAI_API_KEY=sk-...      # the TS runtime (runtime.ts) uses OpenAI's Responses API for web search;
+                           # the Python agent/ uses Tavily instead (see "Deep research" below)
+
+# Optional integrations (see setup.md):
+LINEAR_API_KEY=lin_api_... # optional — lets the agent file Linear tickets
 
 # Self-hosted mode:
 SLACK_BOT_TOKEN=xoxb-...
@@ -137,7 +141,7 @@ To run it:
 ```bash
 cd agent && uv sync   # requires uv: https://docs.astral.sh/uv/
 pnpm agent            # cd agent && uv run python main.py — serves over AG-UI on :8123
-                       # (port from SERVER_PORT/PORT env, default 8123)
+                       # (port from PORT/SERVER_PORT env, default 8123)
 ```
 
 Then point the bot at it instead of `runtime.ts` by setting in `.env`:
@@ -151,6 +155,72 @@ With `agent/` in the mix, the local setup is now three pieces: the deep-research
 `AGENT_URL` points at — the Python deep agent above, or the TS `runtime.ts` (`pnpm runtime`,
 `:8200`) as before. `agent` and `runtime` are alternative brains for the same bot; run one or
 the other depending on what `AGENT_URL` targets.
+
+## Deploy to Railway (one-click)
+
+The whole KiteBot stack deploys to [Railway](https://railway.com) as **three services**, all
+built from this one repo and wired together automatically over Railway's private networking:
+
+| Service | What it is | Build |
+| --- | --- | --- |
+| `agent` | the Python deep-research backend (`agent/`) | nixpacks, `uvicorn`, `/health` (root dir `agent/`) |
+| `notion-mcp` | the Notion MCP sidecar (`pnpm notion-mcp`) | Node |
+| `channel` | the KiteBot channel host (`pnpm channel`) | Node |
+
+`channel` reaches `agent` via `AGENT_URL`, and `agent` reaches `notion-mcp` via `NOTION_MCP_URL`
+— both wired with Railway reference variables in [`.railway/railway.ts`](./.railway/railway.ts),
+so you don't set them by hand.
+
+**Deploy via Infrastructure-as-Code (recommended):**
+
+```bash
+pnpm install                 # installs the `railway` SDK the CLI uses to evaluate .railway/railway.ts
+npm i -g @railway/cli        # or: brew install railway
+railway login
+railway init                 # create a new Railway project (or `railway link` to select an existing one)
+railway config apply         # from the repo root: provisions agent + notion-mcp + channel from .railway/railway.ts
+```
+
+**Set the secrets** (Railway → each service → *Variables*). The IaC declares them with
+`preserve()` and never stores values — you fill them in:
+
+- **`agent`** — `OPENAI_API_KEY` (required); `TAVILY_API_KEY` (optional — enables web research);
+  `LINEAR_API_KEY` (optional). (`NOTION_MCP_AUTH_TOKEN` is **not** set here — the agent references
+  it from `notion-mcp`, so you set it once, below.)
+- **`notion-mcp`** — `NOTION_TOKEN` and `NOTION_MCP_AUTH_TOKEN` (any strong string; the agent
+  reads the same value via a reference variable). **Both are required** for this service to
+  start — its launcher exits if either is missing. Don't want Notion? Remove the `notion-mcp`
+  service from `resources` in [`.railway/railway.ts`](./.railway/railway.ts) and delete the
+  agent's `NOTION_MCP_URL` / `NOTION_MCP_AUTH_TOKEN` lines; the agent still runs (chat, UI, and —
+  with `TAVILY_API_KEY` — web research).
+- **`channel`** — `INTELLIGENCE_GATEWAY_WS_URL`, `INTELLIGENCE_API_KEY`, `INTELLIGENCE_ORG_ID`,
+  `INTELLIGENCE_PROJECT_ID`, `INTELLIGENCE_CHANNEL_ID` (from your CopilotKit Intelligence
+  project + channel).
+
+The inter-service URLs/ports are wired for you in [`.railway/railway.ts`](./.railway/railway.ts).
+Two values are left unmanaged by the IaC so a UI override survives `railway config apply`: the
+agent's `OPENAI_MODEL` (defaults to `gpt-5.5`) and the channel's `INTELLIGENCE_CHANNEL_NAME`
+(defaults to `kitebot`). Set either in that service's *Variables* to change it — e.g. set
+`INTELLIGENCE_CHANNEL_NAME` if your Intelligence channel isn't named `kitebot`.
+
+Applying the config creates the services and their wiring; **KiteBot goes live only once the
+secrets are set and the `channel` service connects** — that's when your Intelligence dashboard
+flips *Waiting for runtime → live*.
+
+> **Cold-start note (Notion):** the `agent` loads its Notion tools once, at startup. On a first
+> cold deploy the `agent` can finish booting before `notion-mcp` is accepting connections, in
+> which case Notion research is unavailable for that deployment — the agent logs a `WARNING` on
+> its stderr (chat, UI, and Tavily web research still work). If KiteBot can't reach Notion after
+> the first deploy, **redeploy the `agent` service** once `notion-mcp` is up. (A lazy/retrying
+> MCP load would remove this race — tracked as a follow-up.)
+
+**"Deploy on Railway" button (optional):** to get a literal one-click button, publish this repo
+as a [Railway template](https://docs.railway.com/templates/create) from your Railway account,
+then drop the generated button in:
+
+```md
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/<your-template-id>)
+```
 
 ## Don't want to host it yourself?
 

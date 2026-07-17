@@ -9,6 +9,7 @@ to prevent subagent text from leaking to the frontend via LangChain callback pro
 """
 
 import os
+import sys
 import asyncio
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor
@@ -229,14 +230,22 @@ def internal_source_tools() -> list:
                     f"tool(s) from {name}"
                 )
             except asyncio.TimeoutError:
+                # This source WAS configured (its token/URL is set) but is
+                # unreachable — a real, silent degradation (the agent runs
+                # without its tools). Warn loudly on stderr so it's not confused
+                # with a source the operator intentionally left disabled. On
+                # Railway a cold-start race can cause this; redeploy once the
+                # sidecar is up (see README "Cold-start note").
                 print(
-                    f"[TOOLS] internal_source_tools: {name} MCP timed out "
-                    f"after 8s, skipping"
+                    f"[TOOLS] WARNING: {name} is configured but its MCP server "
+                    f"timed out after 8s — running WITHOUT {name} tools",
+                    file=sys.stderr,
                 )
             except Exception as e:
                 print(
-                    f"[TOOLS] internal_source_tools: {name} MCP unavailable, "
-                    f"skipping ({e})"
+                    f"[TOOLS] WARNING: {name} is configured but its MCP server "
+                    f"is unavailable — running WITHOUT {name} tools ({e})",
+                    file=sys.stderr,
                 )
         return loaded
 
@@ -245,5 +254,8 @@ def internal_source_tools() -> list:
     except Exception as e:
         # Belt-and-suspenders: even a failure in the event-loop plumbing
         # itself (not just an individual server) must not break startup.
-        print(f"[TOOLS] internal_source_tools: failed to load MCP tools ({e})")
+        print(
+            f"[TOOLS] WARNING: failed to load internal-source MCP tools ({e})",
+            file=sys.stderr,
+        )
         return []
